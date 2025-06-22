@@ -24,13 +24,13 @@ from app.schemas import NotificationType
 
 class IkuaiRouterBackup(_PluginBase):
     # 插件名称
-    plugin_name = "爱快路由备份助手"
+    plugin_name = "爱快路由时光机"
     # 插件描述
-    plugin_desc = "为爱快路由提供全自动的配置备份方案，支持本地保存和WebDAV云端备份。"
+    plugin_desc = "轻松备份与恢复您的爱快路由配置，就像使用时光机一样简单。"
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/ikuai.png"
     # 插件版本
-    plugin_version = "1.1.8"
+    plugin_version = "1.2.0"
     # 插件作者
     plugin_author = "M.Jinxi"
     # 作者主页
@@ -47,6 +47,11 @@ class IkuaiRouterBackup(_PluginBase):
     _lock: Optional[threading.Lock] = None
     _running: bool = False
     _max_history_entries: int = 100 # Max number of history entries to keep
+    _restore_lock: Optional[threading.Lock] = None  # 恢复操作锁
+    _max_restore_history_entries: int = 50  # 恢复历史记录最大数量
+    _global_task_lock: Optional[threading.Lock] = None  # 全局任务锁，协调备份和恢复任务
+    _backup_activity: str = "空闲"  # 备份活动状态
+    _restore_activity: str = "空闲"  # 恢复活动状态
 
     # 配置属性
     _enabled: bool = False
@@ -55,7 +60,7 @@ class IkuaiRouterBackup(_PluginBase):
     _notify: bool = False
     _retry_count: int = 3
     _retry_interval: int = 60
-    _notification_style: int = 1
+    _notification_style: int = 0
     
     _ikuai_url: str = ""
     _ikuai_username: str = "admin"
@@ -72,6 +77,15 @@ class IkuaiRouterBackup(_PluginBase):
     _webdav_path: str = ""
     _webdav_keep_backup_num: int = 7
     _clear_history: bool = False  # 新增：清理历史记录开关
+    _delete_after_backup: bool = False # 新增：备份后删除路由器文件开关
+
+    # 恢复配置
+    _enable_restore: bool = False  # 启用恢复功能
+    _restore_force: bool = False  # 强制恢复（覆盖现有配置）
+    _restore_file: str = ""  # 要恢复的文件
+    _restore_now: bool = False  # 立即恢复开关
+
+    _original_ikuai_url: str = ""
 
     def init_plugin(self, config: Optional[dict] = None):
         self._lock = threading.Lock()
@@ -83,8 +97,12 @@ class IkuaiRouterBackup(_PluginBase):
             self._notify = bool(config.get("notify", False))
             self._retry_count = int(config.get("retry_count", 3))
             self._retry_interval = int(config.get("retry_interval", 60))
-            self._notification_style = int(config.get("notification_style", 1))
-            self._ikuai_url = str(config.get("ikuai_url", "")).rstrip('/')
+            self._notification_style = int(config.get("notification_style", 0))
+
+            # 处理ikuai_url，保留原始值用于显示，处理后的值用于后端请求
+            self._original_ikuai_url = str(config.get("ikuai_url", "")).strip()
+            self._ikuai_url = self._get_processed_ikuai_url(self._original_ikuai_url)
+
             self._ikuai_username = str(config.get("ikuai_username", "admin"))
             self._ikuai_password = str(config.get("ikuai_password", ""))
             self._enable_local_backup = bool(config.get("enable_local_backup", True))
@@ -102,6 +120,11 @@ class IkuaiRouterBackup(_PluginBase):
             self._webdav_path = str(config.get("webdav_path", ""))
             self._webdav_keep_backup_num = int(config.get("webdav_keep_backup_num", 7))
             self._clear_history = bool(config.get("clear_history", False))  # 新增：清理历史记录开关
+            self._delete_after_backup = bool(config.get("delete_after_backup", False))
+            self._enable_restore = bool(config.get("enable_restore", False))
+            self._restore_force = bool(config.get("restore_force", False))
+            self._restore_file = str(config.get("restore_file", ""))
+            self._restore_now = bool(config.get("restore_now", False))
             self.__update_config()
 
             # 处理清理历史记录请求
@@ -161,7 +184,7 @@ class IkuaiRouterBackup(_PluginBase):
             "onlyonce": self._onlyonce,
             "retry_count": self._retry_count,
             "retry_interval": self._retry_interval,
-            "ikuai_url": self._ikuai_url,
+            "ikuai_url": self._original_ikuai_url,
             "ikuai_username": self._ikuai_username,
             "ikuai_password": self._ikuai_password,
             "enable_local_backup": self._enable_local_backup,  # 新增：本地备份开关
@@ -175,6 +198,11 @@ class IkuaiRouterBackup(_PluginBase):
             "webdav_path": self._webdav_path,
             "webdav_keep_backup_num": self._webdav_keep_backup_num,
             "clear_history": self._clear_history,  # 新增：清理历史记录开关
+            "delete_after_backup": self._delete_after_backup,
+            "enable_restore": self._enable_restore,
+            "restore_force": self._restore_force,
+            "restore_file": self._restore_file,
+            "restore_now": self._restore_now,
         })
 
     def get_state(self) -> bool:
@@ -184,7 +212,15 @@ class IkuaiRouterBackup(_PluginBase):
         return []
 
     def get_api(self) -> List[Dict[str, Any]]:
-        return []
+        return [
+            {
+                "path": "/restore",
+                "endpoint": "restore_backup",
+                "method": "POST",
+                "description": "执行恢复操作",
+                "func": self._api_restore_backup
+            }
+        ]
 
     def get_service(self) -> List[Dict[str, Any]]:
         if self._enabled and self._cron:
@@ -206,11 +242,110 @@ class IkuaiRouterBackup(_PluginBase):
         return []
 
     def get_form(self) -> Tuple[List[dict], Dict[str, Any]]:
-        default_backup_location_desc = "插件数据目录下的 actual_backups 子目录"
-        return [
-            {
-                'component': 'VForm',
-                'content': [
+        # 基础设置卡片（独立显示）
+        basic_settings_card = {
+            'component': 'VCard',
+            'props': {'variant': 'outlined', 'class': 'mb-4'},
+            'content': [
+                {
+                    'component': 'VCardTitle',
+                    'props': {'class': 'text-h6'},
+                    'text': '⚙️ 基础设置'
+                },
+                {
+                    'component': 'VCardText',
+                    'content': [
+                        {
+                            'component': 'VRow',
+                            'content': [
+                                {'component': 'VCol', 'props': {'cols': 12, 'md': 3}, 'content': [
+                                    {'component': 'VSwitch', 'props': {
+                                        'model': 'enabled', 
+                                        'label': '启用插件', 
+                                        'color': 'primary', 
+                                        'prepend-icon': 'mdi-power'
+                                    }}
+                                ]},
+                                {'component': 'VCol', 'props': {'cols': 12, 'md': 3}, 'content': [
+                                    {'component': 'VSwitch', 'props': {
+                                        'model': 'notify', 
+                                        'label': '发送通知', 
+                                        'color': 'info', 
+                                        'prepend-icon': 'mdi-bell'
+                                    }}
+                                ]},
+                                {'component': 'VCol', 'props': {'cols': 12, 'md': 3}, 'content': [
+                                    {'component': 'VSwitch', 'props': {
+                                        'model': 'onlyonce', 
+                                        'label': '立即运行一次', 
+                                        'color': 'success', 
+                                        'prepend-icon': 'mdi-play'
+                                    }}
+                                ]},
+                                {'component': 'VCol', 'props': {'cols': 12, 'md': 3}, 'content': [
+                                    {'component': 'VSwitch', 'props': {
+                                        'model': 'clear_history', 
+                                        'label': '清理历史记录', 
+                                        'color': 'warning', 
+                                        'prepend-icon': 'mdi-delete-sweep'
+                                    }}
+                                ]},
+                            ],
+                        },
+                        {
+                            'component': 'VRow',
+                            'content': [
+                                {'component': 'VCol', 'props': {'cols': 12, 'md': 3}, 'content': [
+                                    {'component': 'VTextField', 'props': {
+                                        'model': 'retry_count', 
+                                        'label': '最大重试次数', 
+                                        'type': 'number', 
+                                        'placeholder': '3', 
+                                        'prepend-inner-icon': 'mdi-refresh'
+                                    }}
+                                ]},
+                                {'component': 'VCol', 'props': {'cols': 12, 'md': 3}, 'content': [
+                                    {'component': 'VTextField', 'props': {
+                                        'model': 'retry_interval', 
+                                        'label': '重试间隔(秒)', 
+                                        'type': 'number', 
+                                        'placeholder': '60', 
+                                        'prepend-inner-icon': 'mdi-timer'
+                                    }}
+                                ]},
+                                {'component': 'VCol', 'props': {'cols': 12, 'md': 3}, 'content': [
+                                    {'component': 'VCronField', 'props': {
+                                        'model': 'cron', 
+                                        'label': '执行周期', 
+                                        'prepend-inner-icon': 'mdi-clock-outline'
+                                    }}
+                                ]},
+                                {'component': 'VCol', 'props': {'cols': 12, 'md': 3}, 'content': [
+                                    {'component': 'VSelect', 'props': {
+                                        'model': 'notification_style', 
+                                        'label': '通知样式', 
+                                        'items': [
+                                            {'title': '默认样式', 'value': 0},
+                                            {'title': '简约星线', 'value': 1}, 
+                                            {'title': '方块花边', 'value': 2}, 
+                                            {'title': '箭头主题', 'value': 3}, 
+                                            {'title': '波浪边框', 'value': 4}, 
+                                            {'title': '科技风格', 'value': 5}
+                                        ], 
+                                        'prepend-inner-icon': 'mdi-palette'
+                                    }}
+                                ]},
+                            ],
+                        },
+                    ]
+                }
+            ]
+        }
+
+        # 定义选项卡内容
+        tabs = {
+            'connection': {
+                'icon': 'mdi-router-network', 'title': '连接设置', 'content': [
                     {
                         'component': 'VCard',
                         'props': {'variant': 'outlined', 'class': 'mb-4'},
@@ -218,38 +353,40 @@ class IkuaiRouterBackup(_PluginBase):
                             {
                                 'component': 'VCardTitle',
                                 'props': {'class': 'text-h6'},
-                                'text': '⚙️ 基础设置'
+                                'text': '🔌 爱快路由连接'
                             },
                             {
                                 'component': 'VCardText',
                                 'content': [
-                                    {
-                                        'component': 'VRow',
-                                        'content': [
-                                            {'component': 'VCol', 'props': {'cols': 3, 'sm': 3, 'md': 3, 'lg': 3}, 'content': [{'component': 'VSwitch', 'props': {'model': 'enabled', 'label': '启用插件', 'color': 'primary', 'prepend-icon': 'mdi-power'}}]},
-                                            {'component': 'VCol', 'props': {'cols': 3, 'sm': 3, 'md': 3, 'lg': 3}, 'content': [{'component': 'VSwitch', 'props': {'model': 'notify', 'label': '发送通知', 'color': 'info', 'prepend-icon': 'mdi-bell'}}]},
-                                            {'component': 'VCol', 'props': {'cols': 3, 'sm': 3, 'md': 3, 'lg': 3}, 'content': [{'component': 'VSwitch', 'props': {'model': 'onlyonce', 'label': '立即运行一次', 'color': 'success', 'prepend-icon': 'mdi-play'}}]},
-                                            {'component': 'VCol', 'props': {'cols': 3, 'sm': 3, 'md': 3, 'lg': 3}, 'content': [{'component': 'VSwitch', 'props': {'model': 'clear_history', 'label': '清理历史记录', 'color': 'warning', 'prepend-icon': 'mdi-delete-sweep'}}]},
-                                        ],
-                                    },
-                                    {
-                                        'component': 'VRow',
-                                        'content': [
-                                            {'component': 'VCol', 'props': {'cols': 12, 'md': 6}, 'content': [{'component': 'VTextField', 'props': {'model': 'ikuai_url', 'label': '爱快路由地址', 'placeholder': '例如: http://10.0.0.1', 'prepend-inner-icon': 'mdi-router-network'}}]},
-                                            {'component': 'VCol', 'props': {'cols': 12, 'md': 6}, 'content': [{'component': 'VCronField', 'props': {'model': 'cron', 'label': '执行周期', 'prepend-inner-icon': 'mdi-clock-outline'}}]}
-                                        ],
-                                    },
-                                    {
-                                        'component': 'VRow',
-                                        'content': [
-                                            {'component': 'VCol', 'props': {'cols': 12, 'md': 6}, 'content': [{'component': 'VTextField', 'props': {'model': 'ikuai_username', 'label': '用户名', 'placeholder': '默认为 admin', 'prepend-inner-icon': 'mdi-account'}}]},
-                                            {'component': 'VCol', 'props': {'cols': 12, 'md': 6}, 'content': [{'component': 'VTextField', 'props': {'model': 'ikuai_password', 'label': '密码', 'type': 'password', 'placeholder': '请输入密码', 'prepend-inner-icon': 'mdi-lock'}}]},
-                                        ],
-                                    },
+                                    {'component': 'VTextField', 'props': {
+                                        'model': 'ikuai_url', 
+                                        'label': '爱快路由地址', 
+                                        'placeholder': '例如: http://10.0.0.1', 
+                                        'prepend-inner-icon': 'mdi-web'
+                                    }},
+                                    {'component': 'VTextField', 'props': {
+                                        'model': 'ikuai_username', 
+                                        'label': '用户名', 
+                                        'placeholder': '默认为 admin', 
+                                        'prepend-inner-icon': 'mdi-account', 
+                                        'class': 'mt-4'
+                                    }},
+                                    {'component': 'VTextField', 'props': {
+                                        'model': 'ikuai_password', 
+                                        'label': '密码', 
+                                        'type': 'password', 
+                                        'placeholder': '请输入密码', 
+                                        'prepend-inner-icon': 'mdi-lock', 
+                                        'class': 'mt-4'
+                                    }},
                                 ]
                             }
                         ]
-                    },
+                    }
+                ]
+            },
+            'webdav': {
+                'icon': 'mdi-cloud', 'title': 'WebDAV设置', 'content': [
                     {
                         'component': 'VCard',
                         'props': {'variant': 'outlined', 'class': 'mb-4'},
@@ -257,31 +394,75 @@ class IkuaiRouterBackup(_PluginBase):
                             {
                                 'component': 'VCardTitle',
                                 'props': {'class': 'text-h6'},
-                                'text': '📦 备份设置'
+                                'text': '☁️ WebDAV远程备份'
                             },
                             {
                                 'component': 'VCardText',
                                 'content': [
+                                    {'component': 'VSwitch', 'props': {
+                                        'model': 'enable_webdav', 
+                                        'label': '启用WebDAV远程备份', 
+                                        'color': 'primary'
+                                    }},
+                                    {'component': 'VTextField', 'props': {
+                                        'model': 'webdav_url', 
+                                        'label': 'WebDAV服务器地址', 
+                                        'placeholder': '例如: https://dav.example.com', 
+                                        'prepend-inner-icon': 'mdi-cloud', 
+                                        'class': 'mt-4'
+                                    }},
                                     {
                                         'component': 'VRow',
                                         'content': [
-                                            {'component': 'VCol', 'props': {'cols': 12, 'md': 4}, 'content': [{'component': 'VSwitch', 'props': {'model': 'enable_local_backup', 'label': '启用本地备份', 'color': 'primary', 'prepend-icon': 'mdi-folder-home'}}]},
-                                            {'component': 'VCol', 'props': {'cols': 12, 'md': 8}, 'content': [{'component': 'VTextField', 'props': {'model': 'backup_path', 'label': '备份文件存储路径', 'placeholder': f'默认为{default_backup_location_desc}', 'prepend-inner-icon': 'mdi-folder'}}]},
-                                        ],
+                                            {'component': 'VCol', 'props': {'cols': 12, 'md': 6}, 'content': [
+                                                {'component': 'VTextField', 'props': {
+                                                    'model': 'webdav_username', 
+                                                    'label': 'WebDAV用户名', 
+                                                    'placeholder': '请输入WebDAV用户名', 
+                                                    'prepend-inner-icon': 'mdi-account-key'
+                                                }}
+                                            ]},
+                                            {'component': 'VCol', 'props': {'cols': 12, 'md': 6}, 'content': [
+                                                {'component': 'VTextField', 'props': {
+                                                    'model': 'webdav_password', 
+                                                    'label': 'WebDAV密码', 
+                                                    'type': 'password', 
+                                                    'placeholder': '请输入WebDAV密码', 
+                                                    'prepend-inner-icon': 'mdi-lock-check'
+                                                }}
+                                            ]}
+                                        ]
                                     },
                                     {
                                         'component': 'VRow',
                                         'content': [
-                                            {'component': 'VCol', 'props': {'cols': 12, 'md': 3}, 'content': [{'component': 'VTextField', 'props': {'model': 'keep_backup_num', 'label': '备份保留数量', 'type': 'number', 'placeholder': '例如: 7', 'prepend-inner-icon': 'mdi-counter'}}]},
-                                            {'component': 'VCol', 'props': {'cols': 12, 'md': 3}, 'content': [{'component': 'VTextField', 'props': {'model': 'retry_count', 'label': '最大重试次数', 'type': 'number', 'placeholder': '3', 'prepend-inner-icon': 'mdi-refresh'}}]},
-                                            {'component': 'VCol', 'props': {'cols': 12, 'md': 3}, 'content': [{'component': 'VTextField', 'props': {'model': 'retry_interval', 'label': '重试间隔(秒)', 'type': 'number', 'placeholder': '60', 'prepend-inner-icon': 'mdi-timer'}}]},
-                                            {'component': 'VCol', 'props': {'cols': 12, 'md': 3}, 'content': [{'component': 'VSelect', 'props': {'model': 'notification_style', 'label': '通知样式', 'items': [{'title': '简约星线', 'value': 1}, {'title': '方块花边', 'value': 2}, {'title': '箭头主题', 'value': 3}, {'title': '波浪边框', 'value': 4}, {'title': '科技风格', 'value': 5}], 'prepend-inner-icon': 'mdi-palette'}}]},
-                                        ],
-                                    },
+                                            {'component': 'VCol', 'props': {'cols': 12, 'md': 6}, 'content': [
+                                                {'component': 'VTextField', 'props': {
+                                                    'model': 'webdav_path', 
+                                                    'label': 'WebDAV备份路径', 
+                                                    'placeholder': '例如: /backups/ikuai', 
+                                                    'prepend-inner-icon': 'mdi-folder-network'
+                                                }}
+                                            ]},
+                                            {'component': 'VCol', 'props': {'cols': 12, 'md': 6}, 'content': [
+                                                {'component': 'VTextField', 'props': {
+                                                    'model': 'webdav_keep_backup_num', 
+                                                    'label': 'WebDAV备份保留数量', 
+                                                    'type': 'number', 
+                                                    'placeholder': '例如: 7', 
+                                                    'prepend-inner-icon': 'mdi-counter'
+                                                }}
+                                            ]}
+                                        ]
+                                    }
                                 ]
                             }
                         ]
-                    },
+                    }
+                ]
+            },
+            'backup': {
+                'icon': 'mdi-backup-restore', 'title': '备份设置', 'content': [
                     {
                         'component': 'VCard',
                         'props': {'variant': 'outlined', 'class': 'mb-4'},
@@ -289,7 +470,7 @@ class IkuaiRouterBackup(_PluginBase):
                             {
                                 'component': 'VCardTitle',
                                 'props': {'class': 'text-h6'},
-                                'text': '☁️ WebDAV远程备份设置'
+                                'text': '📦 本地备份'
                             },
                             {
                                 'component': 'VCardText',
@@ -297,31 +478,116 @@ class IkuaiRouterBackup(_PluginBase):
                                     {
                                         'component': 'VRow',
                                         'content': [
-                                            {'component': 'VCol', 'props': {'cols': 12, 'md': 4}, 'content': [{'component': 'VSwitch', 'props': {'model': 'enable_webdav', 'label': '启用WebDAV远程备份', 'color': 'primary', 'prepend-icon': 'mdi-cloud-sync'}}]},
-                                            {'component': 'VCol', 'props': {'cols': 12, 'md': 8}, 'content': [{'component': 'VTextField', 'props': {'model': 'webdav_url', 'label': 'WebDAV服务器地址', 'placeholder': '例如: https://dav.example.com', 'prepend-inner-icon': 'mdi-cloud'}}]},
-                                        ],
+                                            {'component': 'VCol', 'props': {'cols': 12, 'md': 6}, 'content': [
+                                                {'component': 'VSwitch', 'props': {
+                                                    'model': 'enable_local_backup', 
+                                                    'label': '启用本地备份', 
+                                                    'color': 'primary'
+                                                }}
+                                            ]},
+                                            {'component': 'VCol', 'props': {'cols': 12, 'md': 6}, 'content': [
+                                                {'component': 'VSwitch', 'props': {
+                                                    'model': 'delete_after_backup', 
+                                                    'label': '备份后删除路由器上的文件', 
+                                                    'color': 'warning'
+                                                }}
+                                            ]}
+                                        ]
                                     },
                                     {
-                                        'component': 'VRow',
-                                        'content': [
-                                            {'component': 'VCol', 'props': {'cols': 12, 'md': 6}, 'content': [{'component': 'VTextField', 'props': {'model': 'webdav_username', 'label': 'WebDAV用户名', 'placeholder': '请输入WebDAV用户名', 'prepend-inner-icon': 'mdi-account-key'}}]},
-                                            {'component': 'VCol', 'props': {'cols': 12, 'md': 6}, 'content': [{'component': 'VTextField', 'props': {'model': 'webdav_password', 'label': 'WebDAV密码', 'type': 'password', 'placeholder': '请输入WebDAV密码', 'prepend-inner-icon': 'mdi-lock-check'}}]},
-                                        ],
+                                        'component': 'VAlert',
+                                        'props': {
+                                            'type': 'warning',
+                                            'variant': 'tonal',
+                                            'text': '警告：启用此选项将在备份成功后从您的爱快路由器上永久删除该备份文件，请谨慎操作！',
+                                            'density': 'compact',
+                                            'class': 'mt-2'
+                                        }
                                     },
-                                    {
-                                        'component': 'VRow',
-                                        'content': [
-                                            {'component': 'VCol', 'props': {'cols': 12, 'md': 8}, 'content': [{'component': 'VTextField', 'props': {'model': 'webdav_path', 'label': 'WebDAV备份路径', 'placeholder': '例如: /backups/ikuai', 'prepend-inner-icon': 'mdi-folder-network'}}]},
-                                            {'component': 'VCol', 'props': {'cols': 12, 'md': 4}, 'content': [{'component': 'VTextField', 'props': {'model': 'webdav_keep_backup_num', 'label': 'WebDAV备份保留数量', 'type': 'number', 'placeholder': '例如: 7', 'prepend-inner-icon': 'mdi-counter'}}]},
-                                        ],
-                                    },
+                                    {'component': 'VTextField', 'props': {
+                                        'model': 'backup_path', 
+                                        'label': '备份文件存储路径', 
+                                        'placeholder': '默认为插件数据目录下的 actual_backups 子目录', 
+                                        'prepend-inner-icon': 'mdi-folder', 
+                                        'class': 'mt-4'
+                                    }},
+                                    {'component': 'VTextField', 'props': {
+                                        'model': 'keep_backup_num', 
+                                        'label': '备份保留数量', 
+                                        'type': 'number', 
+                                        'placeholder': '例如: 7', 
+                                        'prepend-inner-icon': 'mdi-counter', 
+                                        'class': 'mt-4'
+                                    }},
                                 ]
                             }
                         ]
-                    },
+                    }
+                ]
+            },
+            'restore': {
+                'icon': 'mdi-restore', 'title': '恢复设置', 'content': [
                     {
                         'component': 'VCard',
                         'props': {'variant': 'outlined', 'class': 'mb-4'},
+                        'content': [
+                            {
+                                'component': 'VCardTitle',
+                                'props': {'class': 'text-h6'},
+                                'text': '🔄 恢复功能'
+                            },
+                            {
+                                'component': 'VCardText',
+                                'content': [
+                                    {
+                                        'component': 'VRow',
+                                        'content': [
+                                            {'component': 'VCol', 'props': {'cols': 12, 'md': 4}, 'content': [
+                                                {'component': 'VSwitch', 'props': {
+                                                    'model': 'enable_restore', 
+                                                    'label': '启用恢复功能', 
+                                                    'color': 'primary'
+                                                }}
+                                            ]},
+                                            {'component': 'VCol', 'props': {'cols': 12, 'md': 4}, 'content': [
+                                                {'component': 'VSwitch', 'props': {
+                                                    'model': 'restore_force', 
+                                                    'label': '强制恢复（覆盖现有配置）', 
+                                                    'color': 'error'
+                                                }}
+                                            ]},
+                                            {'component': 'VCol', 'props': {'cols': 12, 'md': 4}, 'content': [
+                                                {'component': 'VSwitch', 'props': {
+                                                    'model': 'restore_now', 
+                                                    'label': '立即恢复', 
+                                                    'color': 'success', 
+                                                    'prepend-icon': 'mdi-play-circle'
+                                                }}
+                                            ]}
+                                        ]
+                                    },
+                                    {'component': 'VSelect', 'props': {
+                                        'model': 'restore_file',
+                                        'label': '选择要恢复的备份文件',
+                                        'items': [
+                                            {'title': f"{backup['filename']} ({backup['source']})", 'value': f"{backup['source']}|{backup['filename']}"}
+                                            for backup in self._get_available_backups()
+                                        ],
+                                        'placeholder': '请选择一个备份文件',
+                                        'prepend-inner-icon': 'mdi-file-find',
+                                        'class': 'mt-4'
+                                    }},
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            },
+            'help': {
+                'icon': 'mdi-help-circle', 'title': '使用说明', 'content': [
+                    {
+                        'component': 'VCard',
+                        'props': {'variant': 'outlined'},
                         'content': [
                             {
                                 'component': 'VCardTitle',
@@ -336,9 +602,33 @@ class IkuaiRouterBackup(_PluginBase):
                                         'props': {
                                             'type': 'info',
                                             'variant': 'tonal',
-                                            'text': f'【使用说明】\n1. 填写爱快路由的访问地址、用户名和密码。\n2. 备份文件存储路径：可留空，默认为{default_backup_location_desc}。或指定一个绝对路径。确保MoviePilot有权访问和写入此路径。\n3. 设置执行周期，例如每天凌晨3点执行 (0 3 * * *)。\n4. 设置备份文件保留数量，旧的备份会被自动删除。\n5. 可选开启通知，在备份完成后收到结果通知，并可选择不同通知样式。\n6. WebDAV远程备份：\n   - 启用后，备份文件会同时上传到WebDAV服务器\n   - 填写WebDAV服务器地址、用户名和密码\n   - 设置WebDAV备份路径和保留数量\n   - 支持常见的WebDAV服务，如坚果云、NextCloud等\n7. 启用插件并保存即可。\n8. 备份文件将以.bak后缀保存。',
                                             'class': 'mb-2'
-                                        }
+                                        },
+                                        'content': [
+                                            {'component': 'VListItem', 'props': {'prepend-icon': 'mdi-star-circle-outline'}, 'content': [{'component': 'VListItemTitle', 'text': '【基础使用说明】'}]},
+                                            {'component': 'VListItem', 'props': {'density': 'compact'}, 'content': [{'component': 'VListItemSubtitle', 'text': '1. 在[连接设置]中填写爱快路由的访问地址、用户名和密码。'}]},
+                                            {'component': 'VListItem', 'props': {'density': 'compact'}, 'content': [{'component': 'VListItemSubtitle', 'text': '2. 在[备份设置]中配置本地备份参数。'}]},
+                                            {'component': 'VListItem', 'props': {'density': 'compact'}, 'content': [{'component': 'VListItemSubtitle', 'text': '3. 在[WebDAV设置]中按需配置远程备份。'}]},
+                                            {'component': 'VListItem', 'props': {'density': 'compact'}, 'content': [{'component': 'VListItemSubtitle', 'text': '4. 在[恢复设置]中可进行系统恢复操作。'}]},
+                                            {'component': 'VListItem', 'props': {'density': 'compact'}, 'content': [{'component': 'VListItemSubtitle', 'text': '5. 在[基础设置]中设置执行周期、通知等并启用插件。'}]},
+                                            {'component': 'VListItem', 'props': {'density': 'compact'}, 'content': [{'component': 'VListItemSubtitle', 'text': '6. 点击保存即可。'}]},
+                                            {'component': 'VListItem', 'props': {'density': 'compact'}, 'content': [{'component': 'VListItemSubtitle', 'text': '7. 备份文件将以.bak后缀保存。'}]},
+                                        ]
+                                    },
+                                    {
+                                        'component': 'VAlert',
+                                        'props': {
+                                            'type': 'warning',
+                                            'variant': 'tonal',
+                                            'class': 'mb-2'
+                                        },
+                                        'content': [
+                                            {'component': 'VListItem', 'props': {'prepend-icon': 'mdi-alert-circle-outline'}, 'content': [{'component': 'VListItemTitle', 'text': '【注意事项】'}]},
+                                            {'component': 'VListItem', 'props': {'density': 'compact'}, 'content': [{'component': 'VListItemSubtitle', 'text': '• 确保爱快路由的Web管理界面可以正常访问。'}]},
+                                            {'component': 'VListItem', 'props': {'density': 'compact'}, 'content': [{'component': 'VListItemSubtitle', 'text': '• 用户名和密码需要具有备份和恢复权限。'}]},
+                                            {'component': 'VListItem', 'props': {'density': 'compact'}, 'content': [{'component': 'VListItemSubtitle', 'text': '• 备份文件可能占用较大空间，请确保存储空间充足。'}]},
+                                            {'component': 'VListItem', 'props': {'density': 'compact'}, 'content': [{'component': 'VListItemSubtitle', 'text': '"立即运行一次" 会在点击保存后约3秒执行，请留意日志输出。'}]},
+                                        ]
                                     }
                                 ]
                             }
@@ -346,60 +636,216 @@ class IkuaiRouterBackup(_PluginBase):
                     }
                 ]
             }
-        ], {
-            "enabled": False, "notify": False, "cron": "0 3 * * *", "onlyonce": False,
-            "retry_count": 3, "retry_interval": 60, "ikuai_url": "", "ikuai_username": "admin",
-            "ikuai_password": "", "enable_local_backup": True, "backup_path": "", "keep_backup_num": 7,
-            "notification_style": 1, "enable_webdav": False, "webdav_url": "", "webdav_username": "",
-            "webdav_password": "", "webdav_path": "", "webdav_keep_backup_num": 7, "clear_history": False
         }
 
-    def get_page(self) -> List[dict]:
-        history_data = self._load_backup_history()
-        
-        if not history_data:
-            return [
-                {
-                    'component': 'VAlert',
-                    'props': {
-                        'type': 'info',
-                        'variant': 'tonal',
-                        'text': '暂无备份历史记录。当有备份操作后，历史将在此处显示。',
-                        'class': 'mb-2'
+        # 最终表单结构
+        form_structure = [
+            {
+                'component': 'VForm',
+                'content': [
+                    basic_settings_card,
+                    {
+                        'component': 'VCard',
+                        'props': {'variant': 'flat'},
+                        'content': [
+                            {
+                                'component': 'VTabs',
+                                'props': {'v-model': 'tab', 'grow': True},
+                                'content': [
+                                    {'component': 'VTab', 'props': {'value': key, 'prepend-icon': value['icon']}, 'text': value['title']}
+                                    for key, value in tabs.items()
+                                ]
+                            },
+                            {
+                                'component': 'VCardText',
+                                'content': [
+                                    {
+                                        'component': 'VWindow',
+                                        'props': {'v-model': 'tab'},
+                                        'content': [
+                                            {
+                                                'component': 'VWindowItem',
+                                                'props': {'value': key},
+                                                'content': value['content']
+                                            }
+                                            for key, value in tabs.items()
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
                     }
+                ]
+            }
+        ]
+
+        # 默认值
+        default_values = {
+            "tab": "connection",
+            "enabled": self._enabled, "notify": self._notify, "cron": self._cron, "onlyonce": self._onlyonce,
+            "retry_count": self._retry_count, "retry_interval": self._retry_interval, "ikuai_url": self._original_ikuai_url,
+            "ikuai_username": self._ikuai_username, "ikuai_password": self._ikuai_password,
+            "enable_local_backup": self._enable_local_backup, "backup_path": self._backup_path,
+            "keep_backup_num": self._keep_backup_num, "notification_style": self._notification_style,
+            "enable_webdav": self._enable_webdav, "webdav_url": self._webdav_url,
+            "webdav_username": self._webdav_username, "webdav_password": self._webdav_password,
+            "webdav_path": self._webdav_path, "webdav_keep_backup_num": self._webdav_keep_backup_num,
+            "clear_history": self._clear_history,  # 新增：清理历史记录开关
+            "delete_after_backup": self._delete_after_backup,
+            "enable_restore": self._enable_restore,
+            "restore_force": self._restore_force, "restore_file": self._restore_file, "restore_now": self._restore_now
+        }
+
+        return form_structure, default_values
+
+    def get_page(self) -> List[dict]:
+        # --- 任务状态部分 ---
+        available_backups = self._get_available_backups()
+        local_backup_count = sum(1 for b in available_backups if b['source'] == '本地备份')
+        webdav_backup_count = sum(1 for b in available_backups if b['source'] == 'WebDAV备份')
+
+        # 确定显示状态和颜色
+        backup_display_status = self._backup_activity
+        restore_display_status = self._restore_activity
+
+        if backup_display_status == "空闲":
+            backup_status_color = "success"
+        elif "失败" in backup_display_status:
+            backup_status_color = "error"
+        else:
+            backup_status_color = "warning"
+
+        if restore_display_status == "空闲":
+            restore_status_color = "success"
+        elif "失败" in restore_display_status:
+            restore_status_color = "error"
+        else:
+            restore_status_color = "warning"
+
+        status_card = {
+            'component': 'VCard',
+            'props': {'variant': 'outlined', 'class': 'mb-4'},
+            'content': [
+                {
+                    'component': 'VCardTitle',
+                    'props': {'class': 'text-h6'},
+                    'text': '📊 任务状态'
+                },
+                {
+                    'component': 'VCardText',
+                    'content': [
+                        {
+                            'component': 'VRow',
+                            'props': {'align': 'center', 'no-gutters': True},
+                            'content': [
+                                {'component': 'VCol', 'props': {'cols': 'auto'}, 'content': [
+                                    {'component': 'VChip', 'props': {
+                                        'color': backup_status_color,
+                                        'variant': 'elevated',
+                                        'label': True,
+                                        'prepend_icon': 'mdi-content-save'
+                                    }, 'text': f"备份状态: {backup_display_status}"}
+                                ]},
+                                {'component': 'VCol', 'props': {'cols': 'auto', 'class': 'ml-2'}, 'content': [
+                                    {'component': 'VChip', 'props': {
+                                        'color': restore_status_color,
+                                        'variant': 'elevated',
+                                        'label': True,
+                                        'prepend_icon': 'mdi-restore'
+                                    }, 'text': f"恢复状态: {restore_display_status}"}
+                                ]},
+                                *([{'component': 'VCol', 'props': {'cols': 'auto', 'class': 'ml-4'}, 'content': [
+                                    {'component': 'VChip', 'props': {
+                                        'color': 'info',
+                                        'variant': 'outlined',
+                                        'label': True,
+                                        'prepend_icon': 'mdi-harddisk'
+                                    }, 'text': f"本地备份: {local_backup_count} 个"}
+                                ]}] if self._enable_local_backup else []),
+                                *([{'component': 'VCol', 'props': {'cols': 'auto', 'class': 'ml-2'}, 'content': [
+                                    {'component': 'VChip', 'props': {
+                                        'color': 'info',
+                                        'variant': 'outlined',
+                                        'label': True,
+                                        'prepend_icon': 'mdi-cloud-outline'
+                                    }, 'text': f"WebDAV备份: {webdav_backup_count} 个"}
+                                ]}] if self._enable_webdav else []),
+                                {'component': 'VSpacer'},
+                                {'component': 'VCol', 'props': {'cols': 'auto'}, 'content': [
+                                    {'component': 'div', 'props': {'class': 'd-flex align-center text-h6'}, 'content':[
+                                        {'component': 'VIcon', 'props': {'icon': 'mdi-router-network', 'size': 'large', 'class': 'mr-2'}},
+                                        {'component': 'span', 'props': {'class': 'font-weight-medium'}, 'text': f"🌐 爱快路由: {self._original_ikuai_url or '未配置'}"},
+                                    ]}
+                                ]},
+                            ]
+                        }
+                    ]
                 }
             ]
-            
-        history_rows = []
-        for item in history_data:
-            timestamp_str = datetime.fromtimestamp(item.get("timestamp", 0)).strftime('%Y-%m-%d %H:%M:%S') if item.get("timestamp") else "N/A"
-            status_success = item.get("success", False)
-            status_text = "成功" if status_success else "失败"
-            status_color = "success" if status_success else "error"
-            filename_str = item.get("filename", "N/A")
-            message_str = item.get("message", "")
+        }
+        
+        # --- 历史记录部分 ---
+        backup_history_data = self._load_backup_history()
+        restore_history_data = self._load_restore_history()
+        
+        all_history = []
+        if isinstance(backup_history_data, list):
+            for item in backup_history_data:
+                item['type'] = '备份'
+                all_history.append(item)
+        if isinstance(restore_history_data, list):
+            for item in restore_history_data:
+                item['type'] = '恢复'
+                all_history.append(item)
+        
+        all_history.sort(key=lambda x: x.get('timestamp', 0), reverse=True)
+        
+        # 统一的历史记录卡片
+        if not all_history:
+            history_card = {
+                'component': 'VAlert',
+                'props': {
+                    'type': 'info',
+                    'variant': 'tonal',
+                    'text': '暂无历史记录。当有备份或恢复操作后，历史将在此处显示。',
+                    'class': 'mb-2'
+                }
+            }
+        else:
+            history_rows = []
+            for item in all_history:
+                timestamp_str = datetime.fromtimestamp(item.get("timestamp", 0)).strftime('%Y-%m-%d %H:%M:%S') if item.get("timestamp") else "N/A"
+                status_success = item.get("success", False)
+                status_text = "成功" if status_success else "失败"
+                status_color = "success" if status_success else "error"
+                filename_str = item.get("filename", "N/A")
+                message_str = item.get("message", "")
+                type_str = item.get("type", "未知")
+                type_color = "primary" if type_str == "备份" else "accent"
 
-            history_rows.append({
-                'component': 'tr',
-                'content': [
-                    {'component': 'td', 'props': {'class': 'text-caption'}, 'text': timestamp_str},
-                    {'component': 'td', 'content': [
-                        {'component': 'VChip', 'props': {'color': status_color, 'size': 'small', 'variant': 'outlined'}, 'text': status_text}
-                    ]},
-                    {'component': 'td', 'text': filename_str},
-                    {'component': 'td', 'text': message_str},
-                ]
-            })
+                history_rows.append({
+                    'component': 'tr',
+                    'content': [
+                        {'component': 'td', 'props': {'class': 'text-caption'}, 'text': timestamp_str},
+                        {'component': 'td', 'content': [
+                            {'component': 'VChip', 'props': {'color': type_color, 'size': 'small', 'variant': 'flat'}, 'text': type_str}
+                        ]},
+                        {'component': 'td', 'content': [
+                            {'component': 'VChip', 'props': {'color': status_color, 'size': 'small', 'variant': 'outlined'}, 'text': status_text}
+                        ]},
+                        {'component': 'td', 'text': filename_str},
+                        {'component': 'td', 'text': message_str},
+                    ]
+                })
 
-        return [
-            {
+            history_card = {
                 "component": "VCard",
                 "props": {"variant": "outlined", "class": "mb-4"},
                 "content": [
                     {
                         "component": "VCardTitle",
                         "props": {"class": "text-h6"},
-                        "text": "📊 爱快路由备份历史"
+                        "text": "📋 任务历史"
                     },
                     {
                         "component": "VCardText",
@@ -418,6 +864,7 @@ class IkuaiRouterBackup(_PluginBase):
                                                 'component': 'tr',
                                                 'content': [
                                                     {'component': 'th', 'text': '时间'},
+                                                    {'component': 'th', 'text': '类型'},
                                                     {'component': 'th', 'text': '状态'},
                                                     {'component': 'th', 'text': '备份文件名 (.bak)'},
                                                     {'component': 'th', 'text': '消息'}
@@ -435,7 +882,8 @@ class IkuaiRouterBackup(_PluginBase):
                     }
                 ]
             }
-        ]
+
+        return [status_card, history_card]
 
     def stop_service(self):
         try:
@@ -623,8 +1071,6 @@ class IkuaiRouterBackup(_PluginBase):
                 error_detail = f"尝试下载 {filename_for_download_url} (API原始名: {actual_router_filename_from_api}) 失败: {download_msg}"
                 return False, error_detail, None
             
-            logger.info(f"{self.plugin_name} 备份文件 {local_display_and_saved_filename} 已成功下载自 {filename_for_download_url} 并保存到 {local_filepath_to_save}")
-            
             # 清理本地旧备份
             self._cleanup_old_backups()
         else:
@@ -660,7 +1106,23 @@ class IkuaiRouterBackup(_PluginBase):
                 self._cleanup_webdav_backups()
             else:
                 logger.error(f"{self.plugin_name} 上传备份到WebDAV服务器失败: {webdav_msg}")
-                return False, f"WebDAV上传失败: {webdav_msg}", None
+                # 即便WebDAV上传失败，如果本地备份成功，也应该继续执行删除路由器文件的操作（如果用户开启了此选项）
+                # return False, f"WebDAV上传失败: {webdav_msg}", None
+
+        # 如果开启了备份后删除功能，并且至少有一种备份方式成功，则执行删除操作
+        if self._delete_after_backup:
+            local_backup_successful = self._enable_local_backup and 'download_success' in locals() and download_success
+            webdav_backup_successful = self._enable_webdav and 'webdav_success' in locals() and webdav_success
+
+            if local_backup_successful or webdav_backup_successful:
+                logger.info(f"{self.plugin_name} 备份成功，将删除路由器上的备份文件: {actual_router_filename_from_api}")
+                delete_success, delete_msg = self._delete_backup_on_router(session, actual_router_filename_from_api)
+                if delete_success:
+                    logger.info(f"{self.plugin_name} 成功删除路由器上的备份文件。")
+                else:
+                    logger.warning(f"{self.plugin_name} 删除路由器上的备份文件失败: {delete_msg}")
+            else:
+                logger.warning(f"{self.plugin_name} 未执行任何成功的备份操作，跳过删除路由器上的文件。")
 
         return True, None, local_display_and_saved_filename
 
@@ -1280,7 +1742,7 @@ class IkuaiRouterBackup(_PluginBase):
             text_content = f"{divider}\n"
             
         text_content += f"{status_prefix} 状态：{status_emoji} {'备份成功' if success else '备份失败'}\n\n"
-        text_content += f"{router_prefix} 路由：{self._ikuai_url}\n"
+        text_content += f"{router_prefix} 路由：{self._original_ikuai_url}\n"
         if filename:
             text_content += f"{file_prefix} 文件：{filename}\n"
         if message:
@@ -1305,3 +1767,447 @@ class IkuaiRouterBackup(_PluginBase):
             logger.info(f"{self.plugin_name} 发送通知: {title}")
         except Exception as e:
             logger.error(f"{self.plugin_name} 发送通知失败: {e}")
+
+    def _load_restore_history(self) -> List[Dict[str, Any]]:
+        """加载恢复历史记录"""
+        history = self.get_data('restore_history')
+        if history is None:
+            return []
+        if not isinstance(history, list):
+            logger.error(f"{self.plugin_name} 恢复历史记录数据格式不正确 (期望列表，得到 {type(history)})。将返回空历史。")
+            return []
+        return history
+
+    def _save_restore_history_entry(self, entry: Dict[str, Any]):
+        """保存单条恢复历史记录"""
+        try:
+            # 加载现有历史记录
+            history = self._load_restore_history()
+            
+            # 添加新记录到开头
+            history.insert(0, entry)
+            
+            # 如果超过最大记录数，删除旧记录
+            if len(history) > self._max_restore_history_entries:
+                history = history[:self._max_restore_history_entries]
+            
+            # 保存更新后的历史记录
+            self.save_data('restore_history', history)
+            logger.debug(f"{self.plugin_name} 已保存恢复历史记录")
+        except Exception as e:
+            logger.error(f"{self.plugin_name} 保存恢复历史记录失败: {str(e)}")
+
+    def _get_available_backups(self) -> List[Dict[str, Any]]:
+        """获取可用的备份文件列表"""
+        backups = []
+        
+        # 获取本地备份
+        if self._enable_local_backup and self._backup_path:
+            try:
+                backup_dir = Path(self._backup_path)
+                if backup_dir.is_dir():
+                    for f_path_obj in backup_dir.iterdir():
+                        if f_path_obj.is_file() and f_path_obj.suffix.lower() == ".bak":
+                            try:
+                                file_time = f_path_obj.stat().st_mtime
+                                backups.append({
+                                    'filename': f_path_obj.name,
+                                    'source': '本地备份',
+                                    'time': file_time
+                                })
+                            except Exception as e:
+                                logger.error(f"{self.plugin_name} 处理本地备份文件 {f_path_obj.name} 时出错: {e}")
+            except Exception as e:
+                logger.error(f"{self.plugin_name} 获取本地备份文件列表时发生错误: {str(e)}")
+        
+        # 获取WebDAV备份
+        if self._enable_webdav and self._webdav_url:
+            try:
+                import requests
+                from urllib.parse import urljoin
+                from xml.etree import ElementTree
+                
+                # 规范化WebDAV URL
+                webdav_url = self._webdav_url.rstrip('/')
+                webdav_path = self._webdav_path.strip('/')
+                
+                # 构建完整的WebDAV URL
+                full_url = urljoin(webdav_url + '/', webdav_path)
+                
+                # 发送PROPFIND请求获取文件列表
+                headers = {
+                    'Depth': '1',
+                    'Content-Type': 'application/xml',
+                    'Accept': '*/*',
+                    'User-Agent': 'MoviePilot/1.0'
+                }
+                
+                response = requests.request(
+                    'PROPFIND',
+                    full_url,
+                    auth=(self._webdav_username, self._webdav_password),
+                    headers=headers,
+                    timeout=30,
+                    verify=False
+                )
+                
+                if response.status_code == 207:  # 207 Multi-Status
+                    root = ElementTree.fromstring(response.content)
+                    
+                    # 遍历所有文件
+                    for response in root.findall('.//{DAV:}response'):
+                        href = response.find('.//{DAV:}href')
+                        if href is None or not href.text:
+                            continue
+                            
+                        file_path = href.text
+                        # 只处理.bak文件
+                        if not file_path.lower().endswith('.bak'):
+                            continue
+                            
+                        # 获取文件修改时间
+                        last_modified = response.find('.//{DAV:}getlastmodified')
+                        if last_modified is not None:
+                            from email.utils import parsedate_to_datetime
+                            try:
+                                file_time = parsedate_to_datetime(last_modified.text).timestamp()
+                            except:
+                                file_time = time.time()
+                        else:
+                            file_time = time.time()
+                            
+                        filename = os.path.basename(file_path)
+                        backups.append({
+                            'filename': filename,
+                            'source': 'WebDAV备份',
+                            'time': file_time
+                        })
+                        
+            except Exception as e:
+                logger.error(f"{self.plugin_name} 获取WebDAV备份文件列表时发生错误: {str(e)}")
+        
+        # 按时间排序
+        backups.sort(key=lambda x: x['time'], reverse=True)
+        return backups
+
+    def run_restore_job(self, filename: str, source: str = "本地备份"):
+        """执行恢复任务"""
+        if not self._enable_restore:
+            logger.error(f"{self.plugin_name} 恢复功能未启用")
+            return
+        
+        if not self._restore_lock:
+            self._restore_lock = threading.Lock()
+        if not self._global_task_lock:
+            self._global_task_lock = threading.Lock()
+            
+        # 尝试获取全局任务锁，如果获取不到说明有其他任务在运行
+        if not self._global_task_lock.acquire(blocking=False):
+            logger.debug(f"{self.plugin_name} 检测到其他任务正在执行，恢复任务跳过！")
+            return
+            
+        # 尝试获取恢复锁，如果获取不到说明有恢复任务在运行
+        if not self._restore_lock.acquire(blocking=False):
+            logger.debug(f"{self.plugin_name} 已有恢复任务正在执行，本次操作跳过！")
+            self._global_task_lock.release()  # 释放全局锁
+            return
+            
+        restore_entry = {
+            "timestamp": time.time(),
+            "success": False,
+            "filename": filename,
+            "message": "恢复任务开始"
+        }
+        self._restore_activity = "任务开始"
+            
+        try:
+            logger.info(f"{self.plugin_name} 开始执行恢复任务，文件: {filename}, 来源: {source}")
+
+            if not self._ikuai_url or not self._ikuai_username or not self._ikuai_password:
+                error_msg = "配置不完整：URL、用户名或密码未设置。"
+                logger.error(f"{self.plugin_name} {error_msg}")
+                self._send_restore_notification(success=False, message=error_msg, filename=filename)
+                restore_entry["message"] = error_msg
+                self._save_restore_history_entry(restore_entry)
+                return
+
+            # 执行恢复操作
+            success, error_msg = self._perform_restore_once(filename, source)
+            
+            restore_entry["success"] = success
+            restore_entry["message"] = "恢复成功" if success else f"恢复失败: {error_msg}"
+            
+            self._send_restore_notification(success=success, message=restore_entry["message"], filename=filename)
+                
+        except Exception as e:
+            logger.error(f"{self.plugin_name} 恢复任务执行主流程出错：{str(e)}")
+            restore_entry["message"] = f"恢复任务执行主流程出错: {str(e)}"
+            self._send_restore_notification(success=False, message=restore_entry["message"], filename=filename)
+        finally:
+            self._restore_activity = "空闲"
+            self._save_restore_history_entry(restore_entry)
+            # 确保锁一定会被释放
+            if self._restore_lock and hasattr(self._restore_lock, 'locked') and self._restore_lock.locked():
+                try:
+                    self._restore_lock.release()
+                except RuntimeError:
+                    pass
+            # 释放全局任务锁
+            if self._global_task_lock and hasattr(self._global_task_lock, 'locked') and self._global_task_lock.locked():
+                try:
+                    self._global_task_lock.release()
+                except RuntimeError:
+                    pass
+            logger.info(f"{self.plugin_name} 恢复任务执行完成。")
+
+    def _perform_restore_once(self, filename: str, source: str) -> Tuple[bool, Optional[str]]:
+        """执行一次恢复操作"""
+        session = requests.Session()
+        retries = Retry(total=3, backoff_factor=0.5, status_forcelist=[500, 502, 503, 504])
+        session.mount('http://', HTTPAdapter(max_retries=retries))
+        session.mount('https://', HTTPAdapter(max_retries=retries))
+
+        # 一致的User-Agent
+        browser_user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36 Edg/136.0.0.0"
+        session.headers.update({"User-Agent": browser_user_agent})
+        
+        # 1. 登录爱快路由
+        sess_key_part = self._login_ikuai(session)
+        if not sess_key_part:
+            return False, "登录爱快路由失败，无法获取SESS_KEY"
+        
+        # 设置Cookie
+        cookie_string = f"username={quote(self._ikuai_username)}; {sess_key_part}; login=1"
+        session.headers.update({"Cookie": cookie_string})
+        
+        # 2. 获取备份文件
+        backup_file_path = None
+        if source == "本地备份":
+            backup_file_path = os.path.join(self._backup_path, filename)
+            if not os.path.exists(backup_file_path):
+                return False, f"本地备份文件不存在: {backup_file_path}"
+        elif source == "WebDAV备份":
+            # 从WebDAV下载备份文件到临时目录
+            temp_dir = Path(self.get_data_path()) / "temp"
+            temp_dir.mkdir(parents=True, exist_ok=True)
+            backup_file_path = str(temp_dir / filename)
+            
+            self._restore_activity = f"下载WebDAV中: {filename}"
+            download_success, download_error = self._download_from_webdav(filename, backup_file_path)
+            if not download_success:
+                self._restore_activity = "空闲"
+                return False, f"从WebDAV下载备份文件失败: {download_error}"
+        else:
+            return False, f"不支持的备份来源: {source}"
+
+        try:
+            # 3. 读取备份文件内容
+            with open(backup_file_path, 'rb') as f:
+                backup_content = f.read()
+
+            # 4. 发送恢复请求
+            restore_url = urljoin(self._ikuai_url, "/Action/call")
+            restore_payload = {
+                "func_name": "backup",
+                "action": "RESTORE",
+                "param": {}
+            }
+
+            self._restore_activity = "正在恢复配置..."
+            logger.info(f"{self.plugin_name} 发送恢复请求...")
+
+            # 首先发送RESTORE请求
+            response = session.post(restore_url, json=restore_payload, timeout=30)
+            response.raise_for_status()
+
+            # 然后上传备份文件
+            upload_url = urljoin(self._ikuai_url, "/Action/upload")
+            files = {
+                'file': (filename, backup_content, 'application/octet-stream')
+            }
+            upload_response = session.post(upload_url, files=files, timeout=300)
+            upload_response.raise_for_status()
+
+            # 检查响应
+            try:
+                result = upload_response.json()
+                if result.get("Result") == 30000 or (isinstance(result, str) and "success" in result.lower()):
+                    logger.info(f"{self.plugin_name} 恢复成功完成")
+                    return True, None
+                else:
+                    error_msg = result.get("ErrMsg") or result.get("errmsg", "恢复失败，未知错误")
+                    return False, error_msg
+            except json.JSONDecodeError:
+                if "success" in upload_response.text.lower():
+                    return True, None
+                return False, f"恢复失败，响应解析错误: {upload_response.text[:200]}"
+
+        except requests.exceptions.RequestException as e:
+            return False, f"恢复请求失败: {str(e)}"
+        except Exception as e:
+            return False, f"恢复过程中发生错误: {str(e)}"
+        finally:
+            # 如果是WebDAV备份，删除临时文件
+            if source == "WebDAV备份" and backup_file_path and os.path.exists(backup_file_path):
+                try:
+                    os.remove(backup_file_path)
+                    logger.info(f"{self.plugin_name} 已删除临时文件: {backup_file_path}")
+                except Exception as e:
+                    logger.warning(f"{self.plugin_name} 删除临时文件失败: {str(e)}")
+
+    def _send_restore_notification(self, success: bool, message: str = "", filename: str = "", is_clear_history: bool = False):
+        """发送恢复通知"""
+        if not self._notify: return
+        title = f"🛠️ {self.plugin_name} "
+        if is_clear_history:
+            title += "清理历史记录"
+        else:
+            title += "恢复" + ("成功" if success else "失败")
+        status_emoji = "✅" if success else "❌"
+        
+        # 根据选择的通知样式设置分隔符和风格
+        if self._notification_style == 1:
+            # 简约星线
+            divider = "★━━━━━━━━━━━━━━━━━━━━━━━★"
+            status_prefix = "📌"
+            router_prefix = "🌐"
+            file_prefix = "📁"
+            info_prefix = "ℹ️"
+            congrats = "\n🎉 恢复任务已顺利完成！"
+            error_msg = "\n⚠️ 恢复失败，请检查日志了解详情。"
+        elif self._notification_style == 2:
+            # 方块花边
+            divider = "■□■□■□■□■□■□■□■□■□■□■□■□■"
+            status_prefix = "🔰"
+            router_prefix = "🔹"
+            file_prefix = "📂"
+            info_prefix = "📝"
+            congrats = "\n🎊 太棒了！配置已成功恢复！"
+            error_msg = "\n🚨 警告：恢复过程中出现错误！"
+        elif self._notification_style == 3:
+            # 箭头主题
+            divider = "➤➤➤➤➤➤➤➤➤➤➤➤➤➤➤➤➤➤➤➤➤"
+            status_prefix = "🔔"
+            router_prefix = "📡"
+            file_prefix = "💾"
+            info_prefix = "📢"
+            congrats = "\n🏆 恢复任务圆满完成！"
+            error_msg = "\n🔥 错误：恢复未能完成！"
+        elif self._notification_style == 4:
+            # 波浪边框
+            divider = "≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈"
+            status_prefix = "🌊"
+            router_prefix = "🌍"
+            file_prefix = "📦"
+            info_prefix = "💫"
+            congrats = "\n🌟 恢复任务完美收官！"
+            error_msg = "\n💥 恢复任务遇到波折！"
+        elif self._notification_style == 5:
+            # 科技风格
+            divider = "▣▣▣▣▣▣▣▣▣▣▣▣▣▣▣▣▣▣▣▣▣▣▣▣▣▣▣"
+            status_prefix = "⚡"
+            router_prefix = "🔌"
+            file_prefix = "💿"
+            info_prefix = "📊"
+            congrats = "\n🚀 系统恢复成功完成！"
+            error_msg = "\n⚠️ 系统恢复出现异常！"
+        else:
+            # 默认样式
+            divider = "━━━━━━━━━━━━━━━━━━━━━━━━━"
+            status_prefix = "📣"
+            router_prefix = "🔗"
+            file_prefix = "📄"
+            info_prefix = "📋"
+            congrats = "\n✨ 恢复已成功完成！"
+            error_msg = "\n❗ 恢复失败，请检查配置和连接！"
+        
+        # 失败时的特殊处理 - 添加额外的警告指示
+        if not success:
+            divider_failure = "❌" + divider[1:-1] + "❌"
+            text_content = f"{divider_failure}\n"
+        else:
+            text_content = f"{divider}\n"
+            
+        text_content += f"{status_prefix} 状态：{status_emoji} {'恢复成功' if success else '恢复失败'}\n\n"
+        text_content += f"{router_prefix} 路由：{self._original_ikuai_url}\n"
+        if filename:
+            text_content += f"{file_prefix} 文件：{filename}\n"
+        if message:
+            text_content += f"{info_prefix} 详情：{message.strip()}\n"
+        
+        # 添加底部分隔线和时间戳
+        if not success:
+            text_content += f"\n{divider_failure}\n"
+        else:
+            text_content += f"\n{divider}\n"
+            
+        text_content += f"⏱️ {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        
+        # 根据成功/失败添加不同信息
+        if success:
+            text_content += congrats
+        else:
+            text_content += error_msg
+        
+        try:
+            self.post_message(mtype=NotificationType.Plugin, title=title, text=text_content)
+            logger.info(f"{self.plugin_name} 发送恢复通知: {title}")
+        except Exception as e:
+            logger.error(f"{self.plugin_name} 发送恢复通知失败: {e}")
+
+    def _api_restore_backup(self, filename: str, source: str = "本地备份"):
+        """API恢复接口"""
+        try:
+            # 启动恢复任务
+            self.run_restore_job(filename, source)
+            return {"success": True, "message": "恢复任务已启动"}
+        except Exception as e:
+            return {"success": False, "message": f"启动恢复任务失败: {str(e)}"}
+
+    def _get_processed_ikuai_url(self, url: str) -> str:
+        """返回处理后的iKuai URL，确保有http/https前缀并移除末尾的斜杠"""
+        url = url.strip().rstrip('/')
+        if not url:
+            return ""
+        if not url.startswith(('http://', 'https://')):
+            return f"http://{url}"
+        return url
+
+    def _delete_backup_on_router(self, session: requests.Session, filename: str) -> Tuple[bool, Optional[str]]:
+        """删除路由器上的指定备份文件"""
+        delete_url = urljoin(self._ikuai_url, "/Action/call")
+        delete_data = {"func_name": "backup", "action": "delete", "param": {"srcfile": filename}}
+        try:
+            logger.info(f"{self.plugin_name} 尝试在 {self._ikuai_url} 删除备份文件: {filename}...")
+            request_headers = {
+                'Content-Type': 'application/json',
+                'Accept': '*/*',
+                'Origin': self._ikuai_url.rstrip('/'),
+                'Referer': self._ikuai_url.rstrip('/') + '/'
+            }
+            response = session.post(delete_url, data=json.dumps(delete_data), headers=request_headers, timeout=30)
+            response.raise_for_status()
+
+            # 检查响应
+            try:
+                res_json = response.json()
+                if res_json.get("Result") == 30000 and "success" in res_json.get("ErrMsg", "").lower():
+                    logger.info(f"{self.plugin_name} 删除备份文件请求成功 (JSON)。响应: {res_json}")
+                    return True, None
+                
+                err_msg = res_json.get("ErrMsg", "删除备份API未返回成功或指定错误信息")
+                logger.error(f"{self.plugin_name} 删除备份文件失败 (JSON)。响应: {res_json}, 错误: {err_msg}")
+                return False, f"路由器返回错误: {err_msg}"
+            except json.JSONDecodeError:
+                if "success" in response.text.lower():
+                    logger.info(f"{self.plugin_name} 删除备份文件请求发送成功。响应: {response.text}")
+                    return True, None
+                logger.error(f"{self.plugin_name} 删除备份文件失败，非JSON响应且不含 'success'。响应: {response.text}")
+                return False, f"路由器返回非预期响应: {response.text[:100]}"
+                
+        except requests.exceptions.RequestException as e:
+            logger.error(f"{self.plugin_name} 删除备份文件请求失败: {e}")
+            return False, str(e)
+        except Exception as e:
+            logger.error(f"{self.plugin_name} 删除备份文件过程中发生未知错误: {e}")
+            return False, str(e)
