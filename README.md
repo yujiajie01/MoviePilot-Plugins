@@ -16,12 +16,9 @@ MoviePilot第三方插件库，提供了一系列实用的插件来增强MoviePi
 
 ## 📦 插件列表
 
-### 🛡️ 爱快路由备份助手 (IkuaiRouterBackup)
-
-> <img src="https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/ikuai.png" width="32" style="vertical-align:middle;">  
-> **🛡️ 爱快路由备份助手 (IkuaiRouterBackup)**  
-> **版本**：`v1.2.0`  
-> **作者**：[M.Jinxi](https://github.com/xijin285)
+#### 🛡️ 爱快路由备份助手 (IkuaiRouterBackup)
+<img src="https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/ikuai.png" width="24" style="vertical-align:middle;">
+**版本**：![version](https://img.shields.io/badge/v1.2.0-blue) **作者**：[M.Jinxi](https://github.com/xijin285)
 
 **简介**：
 > 轻松备份与恢复您的爱快路由配置，就像使用时光机一样简单。
@@ -56,12 +53,9 @@ MoviePilot第三方插件库，提供了一系列实用的插件来增强MoviePi
 - `v1.0.0`：�� 初始版本。
 </details>
 
-### 🎬 国语视界签到V2 (CnlangSigninV2)
-
-> <img src="https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/cnlang.png" width="32" style="vertical-align:middle;">  
-> **🎬 国语视界签到V2 (CnlangSigninV2)**  
-> **版本**：`v2.5.8`  
-> **作者**：[M.Jinxi](https://github.com/xijin285)
+#### 🎬 国语视界签到V2 (CnlangSigninV2)
+<img src="https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/cnlang.png" width="24" style="vertical-align:middle;">
+**版本**：![version](https://img.shields.io/badge/v2.5.8-blue) **作者**：[M.Jinxi](https://github.com/xijin285)
 
 **简介**：
 > 美观实用的签到助手，支持账号监控、数据统计、自动签到。
@@ -95,12 +89,9 @@ MoviePilot第三方插件库，提供了一系列实用的插件来增强MoviePi
 - `v2.0`：🛠️ 基于imaliang插件二次开发，优化数据保存与界面，增加通知样式选择、历史记录保留
 </details>
 
-### 🛠️ OpenWrt路由备份助手 (OpenWrtBackup)
-
-> <img src="https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/openwrt.webp" width="32" style="vertical-align:middle;">  
-> **🛠️ OpenWrt路由备份助手 (OpenWrtBackup)**  
-> **版本**：`v1.0.0`  
-> **作者**：[M.Jinxi](https://github.com/xijin285)
+#### 🛠️ OpenWrt路由备份助手 (OpenWrtBackup)
+<img src="https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/openwrt.webp" width="24" style="vertical-align:middle;">
+**版本**：![version](https://img.shields.io/badge/v1.0.0-blue) **作者**：[M.Jinxi](https://github.com/xijin285)
 
 **简介**：
 > 为OpenWrt路由器提供全自动的配置备份方案，支持本地保存和WebDAV云端备份，让您的网络设置安全无忧。
@@ -127,12 +118,9 @@ MoviePilot第三方插件库，提供了一系列实用的插件来增强MoviePi
 > 📊 提供完整的历史记录管理。  
 > ⚡ 支持即时备份功能。
 
-### 🖥️ PVE虚拟机守护神 (ProxmoxVEBackup)
-
-> <img src="https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/proxmox.webp" width="32" style="vertical-align:middle;">  
-> **🖥️ PVE虚拟机守护神 (ProxmoxVEBackup)**  
-> **版本**：`v1.1.3`  
-> **作者**：[M.Jinxi](https://github.com/xijin285)
+#### 🖥️ PVE虚拟机守护神 (ProxmoxVEBackup)
+<img src="https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/proxmox.webp" width="24" style="vertical-align:middle;">
+**版本**：![version](https://img.shields.io/badge/v1.1.3-blue) **作者**：[M.Jinxi](https://github.com/xijin285)
 
 **简介**：
 > PVE虚拟机守护神，自动化备份与恢复容器，提供完整的备份管理解决方案。
