@@ -65,5 +65,17 @@
       "v1.1.0": "新增恢复功能，支持恢复备份的虚拟机。",
       "v1.0.0": "首个正式版本"
     }
+  },
+  "QuarkDisk": {
+    "name": "夸克网盘存储",
+    "description": "为存储系统集成夸克网盘支持，轻松实现云端文件的上传、下载与管理。",
+    "labels": "存储,网盘",
+    "version": "1.0.0",
+    "icon": "https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/quark.ico",
+    "author": "M.Jinxi",
+    "level": 2,
+    "history": {
+      "v1.0.0": "首个正式版本：支持夸克网盘基础操作。"
+    }
   }
-} 
+}
