@@ -120,7 +120,7 @@ MoviePilot第三方插件库，提供了一系列实用的插件来增强MoviePi
 > ⚡ 支持即时备份功能。
 
 #### <img src="https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/proxmox.webp" width="32" style="vertical-align:middle;"> PVE虚拟机守护神 (ProxmoxVEBackup)
--   **版本**: `v1.1.3`
+-   **版本**: `v1.1.4`
 -   **作者**: [@M.Jinxi](https://github.com/xijin285)
 
 **简介**：
@@ -146,14 +146,14 @@ MoviePilot第三方插件库，提供了一系列实用的插件来增强MoviePi
 - 🔄 **容错机制**：自动重试、网络异常恢复、任务智能协调
 
 **最新更新**：
-> `v1.1.3`  
-> 🔧 修复多容器备份日志问题。  
-> 🎨 优化前端API通知样式和类型。  
-> ⚡ 提升插件整体稳定性。
+> `v1.1.4`  
+> 🔧 兼容OpenList网盘无法上传问题。  
+> ⚡ 优化WebDAV上传稳定性。
 
 <details>
 <summary>历史更新</summary>
 
+- `v1.1.3`：🔧 修复多容器备份日志问题，🎨 优化前端API通知样式和类型，⚡ 提升插件整体稳定性。
 - `v1.1.2`：🎨 修复浅色和幻紫主题下UI显示问题，🖥️ 优化界面适配，🔧 完善主题兼容性。
 - `v1.1.1`：🐛 修复部分版本无法备份，⚡ 优化兼容性，🔧 完善错误处理，📦 多容器备份优化。
 - `v1.1.0`：🎉 新增恢复功能，🔄 任务协调，🌐 WebDAV支持，📊 恢复历史，🔔 通知系统优化，⚡ 优先级管理，🛡️ SSH密钥认证，📋 界面重构。

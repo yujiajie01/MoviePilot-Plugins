@@ -27,7 +27,7 @@ class ProxmoxVEBackup(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/proxmox.webp"
     # 插件版本
-    plugin_version = "1.1.3"
+    plugin_version = "1.1.4"
     # 插件作者
     plugin_author = "M.Jinxi"
     # 作者主页
@@ -1532,7 +1532,7 @@ class ProxmoxVEBackup(_PluginBase):
             running_backups = stdout.read().decode().strip()
             
             if running_backups:
-                logger.warning(f"{self.plugin_name} 检测到PVE端已有备份任务在运行，跳过本次备份")
+                logger.warning(f"{self.plugin_name}  logger.warning ")
                 logger.info(f"{self.plugin_name} 正在运行的备份进程: {running_backups}")
                 return False, "PVE端已有备份任务在运行，为避免冲突跳过本次备份", None, {}
             
@@ -1835,7 +1835,42 @@ class ProxmoxVEBackup(_PluginBase):
             # 构建WebDAV基础URL
             base_url = self._webdav_url.rstrip('/')
             webdav_path = self._webdav_path.lstrip('/')
-            upload_url = urljoin(base_url + '/', f"{webdav_path}/{filename}")
+            
+            # 检测是否为Alist服务器（端口5244）
+            is_alist = parsed_url.port == 5244 or '5244' in self._webdav_url
+            
+            # 构建可能的上传URL列表
+            possible_upload_urls = []
+            
+            if is_alist:
+                # Alist的特殊路径结构
+                if webdav_path:
+                    possible_upload_urls.extend([
+                        f"{base_url}/dav/{webdav_path}/{filename}",
+                        f"{base_url}/dav/{webdav_path}/{filename}",
+                        f"{base_url}/{webdav_path}/{filename}",
+                        f"{base_url}/dav/{filename}"
+                    ])
+                else:
+                    possible_upload_urls.extend([
+                        f"{base_url}/dav/{filename}",
+                        f"{base_url}/{filename}"
+                    ])
+            else:
+                # 标准WebDAV路径
+                if webdav_path:
+                    possible_upload_urls.extend([
+                        f"{base_url}/{webdav_path}/{filename}",
+                        f"{base_url}/dav/{webdav_path}/{filename}",
+                        f"{base_url}/remote.php/webdav/{webdav_path}/{filename}",
+                        f"{base_url}/dav/files/{self._webdav_username}/{webdav_path}/{filename}"
+                    ])
+                else:
+                    possible_upload_urls.extend([
+                        f"{base_url}/{filename}",
+                        f"{base_url}/dav/{filename}",
+                        f"{base_url}/remote.php/webdav/{filename}"
+                    ])
 
             # 准备认证信息
             auth_methods = [
@@ -1861,8 +1896,7 @@ class ProxmoxVEBackup(_PluginBase):
                         headers={
                             'Depth': '0',
                             'User-Agent': 'MoviePilot/1.0',
-                            'Accept': '*/*',
-                            'Connection': 'keep-alive'
+                            'Accept': '*/*'
                         },
                         timeout=10,
                         verify=False
@@ -1891,7 +1925,7 @@ class ProxmoxVEBackup(_PluginBase):
             if webdav_path:
                 create_success, create_error = self._create_webdav_directories(successful_auth, base_url, webdav_path)
                 if not create_success:
-                    return False, create_error
+                    logger.warning(f"{self.plugin_name} 创建目录失败，但继续尝试上传: {create_error}")
 
             # 读取文件内容
             try:
@@ -1900,165 +1934,193 @@ class ProxmoxVEBackup(_PluginBase):
             except Exception as e:
                 return False, f"读取本地文件失败: {str(e)}"
 
-            # 准备上传请求
+            # 准备上传请求头
             headers = {
                 'Content-Type': 'application/octet-stream',
-                'Content-Length': str(len(file_content)),
                 'User-Agent': 'MoviePilot/1.0',
-                'Accept': '*/*',
-                'Connection': 'keep-alive'
+                'Accept': '*/*'
             }
 
-            # 发送PUT请求上传文件
-            try:
-                # 使用requests.put的data参数流式上传
-                with open(local_file_path, 'rb') as f:
-                    total_size = os.path.getsize(local_file_path)
-                    uploaded_size = 0
-                    last_progress = -1  # 记录上次显示的进度
-                    
-                    def upload_callback():
-                        nonlocal uploaded_size, last_progress
-                        chunk_size = 8192
-                        while True:
-                            chunk = f.read(chunk_size)
-                            if not chunk:
-                                break
-                            uploaded_size += len(chunk)
-                            # 计算进度
-                            if total_size > 0:
-                                progress = (uploaded_size / total_size) * 100
-                                # 每20%显示一次进度
-                                current_progress = int(progress / 20) * 20
-                                if current_progress > last_progress or progress > 99.9:
-                                    self._backup_activity = f"上传WebDAV中: {progress:.1f}%"
-                                    logger.info(f"{self.plugin_name} WebDAV上传进度: {progress:.1f}%")
-                                    last_progress = current_progress
-                            yield chunk
-                    
-                    response = requests.put(
-                        upload_url,
-                        data=upload_callback(),
-                        auth=successful_auth,
-                        headers=headers,
-                        timeout=30,
-                        verify=False
-                    )
+            # 尝试多种上传方法
+            upload_methods = [
+                ('PUT', headers),
+                ('POST', headers),
+                ('PUT', {**headers, 'Content-Type': 'application/x-tar'}),
+                ('POST', {**headers, 'Content-Type': 'application/x-tar'}),
+                ('PUT', {**headers, 'Overwrite': 'T'}),
+                ('POST', {**headers, 'Overwrite': 'T'})
+            ]
 
-                if response.status_code in [200, 201, 204]:
-                    logger.info(f"{self.plugin_name} 成功上传文件到WebDAV: {upload_url}")
-                    return True, None
-                elif response.status_code == 409:
-                    # 文件冲突，这是WebDAV标准中的常见问题
-                    logger.warning(f"{self.plugin_name} WebDAV文件冲突(409)，尝试多种解决方案: {upload_url}")
-                    
-                    # 方案1：尝试删除旧文件后重新上传
+            # 尝试每个URL和每种方法
+            for upload_url in possible_upload_urls:
+                logger.info(f"{self.plugin_name} 尝试上传到URL: {upload_url}")
+                
+                for method, method_headers in upload_methods:
                     try:
-                        logger.info(f"{self.plugin_name} 方案1：尝试删除旧文件后重新上传")
-                        delete_response = requests.delete(
-                            upload_url,
-                            auth=successful_auth,
-                            headers={'User-Agent': 'MoviePilot/1.0'},
-                            timeout=10,
-                            verify=False
-                        )
+                        logger.info(f"{self.plugin_name} 尝试使用 {method} 方法上传到WebDAV...")
                         
-                        if delete_response.status_code in [200, 201, 204, 404]:  # 404表示文件不存在
-                            logger.info(f"{self.plugin_name} 已删除旧文件，等待3秒后重新上传")
-                            time.sleep(3)
+                        # 使用requests的data参数流式上传
+                        with open(local_file_path, 'rb') as f:
+                            total_size = os.path.getsize(local_file_path)
+                            uploaded_size = 0
+                            last_progress = -1  # 记录上次显示的进度
                             
-                            retry_response = requests.put(
-                                upload_url,
-                                data=file_content,
-                                auth=successful_auth,
-                                headers=headers,
-                                timeout=30,
-                                verify=False
-                            )
+                            def upload_callback():
+                                nonlocal uploaded_size, last_progress
+                                chunk_size = 8192
+                                while True:
+                                    chunk = f.read(chunk_size)
+                                    if not chunk:
+                                        break
+                                    uploaded_size += len(chunk)
+                                    # 计算进度
+                                    if total_size > 0:
+                                        progress = (uploaded_size / total_size) * 100
+                                        # 每20%显示一次进度
+                                        current_progress = int(progress / 20) * 20
+                                        if current_progress > last_progress or progress > 99.9:
+                                            self._backup_activity = f"上传WebDAV中: {progress:.1f}%"
+                                            logger.info(f"{self.plugin_name} WebDAV上传进度: {progress:.1f}%")
+                                            last_progress = current_progress
+                                    yield chunk
                             
-                            if retry_response.status_code in [200, 201, 204]:
-                                logger.info(f"{self.plugin_name} 方案1成功：成功重新上传文件到WebDAV")
-                                return True, None
-                            else:
-                                logger.warning(f"{self.plugin_name} 方案1失败：重新上传返回状态码 {retry_response.status_code}")
-                        else:
-                            logger.warning(f"{self.plugin_name} 方案1失败：删除旧文件返回状态码 {delete_response.status_code}")
-                    except Exception as e:
-                        logger.warning(f"{self.plugin_name} 方案1异常：{str(e)}")
-                    
-                    # 方案2：使用带时间戳的新文件名
-                    try:
-                        logger.info(f"{self.plugin_name} 方案2：使用带时间戳的新文件名")
-                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                        name_without_ext = os.path.splitext(filename)[0]
-                        ext = os.path.splitext(filename)[1]
-                        new_filename = f"{name_without_ext}_{timestamp}{ext}"
-                        new_upload_url = urljoin(base_url + '/', f"{webdav_path}/{new_filename}")
-                        
-                        logger.info(f"{self.plugin_name} 尝试使用新文件名上传: {new_filename}")
-                        final_response = requests.put(
-                            new_upload_url,
-                            data=file_content,
-                            auth=successful_auth,
-                            headers=headers,
-                            timeout=30,
-                            verify=False
-                        )
-                        
-                        if final_response.status_code in [200, 201, 204]:
-                            logger.info(f"{self.plugin_name} 方案2成功：使用新文件名上传成功")
-                            return True, None
-                        else:
-                            logger.warning(f"{self.plugin_name} 方案2失败：新文件名上传返回状态码 {final_response.status_code}")
-                    except Exception as e:
-                        logger.warning(f"{self.plugin_name} 方案2异常：{str(e)}")
-                    
-                    # 方案3：尝试使用不同的Content-Type
-                    try:
-                        logger.info(f"{self.plugin_name} 方案3：尝试使用不同的Content-Type")
-                        alt_headers = headers.copy()
-                        alt_headers['Content-Type'] = 'application/x-tar'
-                        
-                        final_response = requests.put(
-                            upload_url,
-                            data=file_content,
-                            auth=successful_auth,
-                            headers=alt_headers,
-                            timeout=30,
-                            verify=False
-                        )
-                        
-                        if final_response.status_code in [200, 201, 204]:
-                            logger.info(f"{self.plugin_name} 方案3成功：使用不同Content-Type上传成功")
-                            return True, None
-                        else:
-                            logger.warning(f"{self.plugin_name} 方案3失败：不同Content-Type上传返回状态码 {final_response.status_code}")
-                    except Exception as e:
-                        logger.warning(f"{self.plugin_name} 方案3异常：{str(e)}")
-                    
-                    # 所有方案都失败了
-                    error_msg = f"WebDAV上传失败：所有冲突解决方案均失败。原始状态码: 409"
-                    logger.error(f"{self.plugin_name} {error_msg}")
-                    return False, error_msg
-                else:
-                    error_msg = f"WebDAV上传失败，状态码: {response.status_code}, 响应: {response.text}"
-                    if response.status_code == 401:
-                        error_msg += "\n可能原因：\n1. 用户名或密码错误\n2. 服务器要求特定的认证方式\n3. 认证信息格式不正确"
-                    elif response.status_code == 403:
-                        error_msg += "\n可能原因：\n1. 用户没有写入权限\n2. 服务器禁止PUT请求\n3. 认证信息不正确"
-                    elif response.status_code == 404:
-                        error_msg += "\n可能原因：目标路径不存在"
-                    elif response.status_code == 507:
-                        error_msg += "\n可能原因：服务器存储空间不足"
-                    logger.error(f"{self.plugin_name} {error_msg}")
-                    return False, error_msg
+                            if method == 'PUT':
+                                response = requests.put(
+                                    upload_url,
+                                    data=upload_callback(),
+                                    auth=successful_auth,
+                                    headers=method_headers,
+                                    timeout=30,
+                                    verify=False
+                                )
+                            else:  # POST
+                                response = requests.post(
+                                    upload_url,
+                                    data=upload_callback(),
+                                    auth=successful_auth,
+                                    headers=method_headers,
+                                    timeout=30,
+                                    verify=False
+                                )
 
-            except requests.exceptions.Timeout:
-                return False, "WebDAV上传请求超时"
-            except requests.exceptions.ConnectionError:
-                return False, "无法连接到WebDAV服务器，请检查网络连接和服务器地址"
-            except requests.exceptions.RequestException as e:
-                return False, f"WebDAV上传请求失败: {str(e)}"
+                        if response.status_code in [200, 201, 204]:
+                            logger.info(f"{self.plugin_name} 成功使用 {method} 方法上传文件到WebDAV: {upload_url}")
+                            return True, None
+                        elif response.status_code == 405:
+                            logger.warning(f"{self.plugin_name} {method} 方法不被支持，状态码: 405")
+                            continue  # 尝试下一种方法
+                        elif response.status_code == 404:
+                            break  # 这个URL不存在，尝试下一个URL
+                        elif response.status_code == 409:
+                            # 文件冲突，这是WebDAV标准中的常见问题
+                            logger.warning(f"{self.plugin_name} WebDAV文件冲突(409)，尝试多种解决方案: {upload_url}")
+                            
+                            # 方案1：尝试删除旧文件后重新上传
+                            try:
+                                logger.info(f"{self.plugin_name} 方案1：尝试删除旧文件后重新上传")
+                                delete_response = requests.delete(
+                                    upload_url,
+                                    auth=successful_auth,
+                                    headers={'User-Agent': 'MoviePilot/1.0'},
+                                    timeout=10,
+                                    verify=False
+                                )
+                                
+                                if delete_response.status_code in [200, 201, 204, 404]:  # 404表示文件不存在
+                                    logger.info(f"{self.plugin_name} 已删除旧文件，等待3秒后重新上传")
+                                    time.sleep(3)
+                                    
+                                    retry_response = requests.put(
+                                        upload_url,
+                                        data=file_content,
+                                        auth=successful_auth,
+                                        headers=method_headers,
+                                        timeout=30,
+                                        verify=False
+                                    )
+                                    
+                                    if retry_response.status_code in [200, 201, 204]:
+                                        logger.info(f"{self.plugin_name} 方案1成功：成功重新上传文件到WebDAV")
+                                        return True, None
+                                    else:
+                                        logger.warning(f"{self.plugin_name} 方案1失败：重新上传返回状态码 {retry_response.status_code}")
+                                else:
+                                    logger.warning(f"{self.plugin_name} 方案1失败：删除旧文件返回状态码 {delete_response.status_code}")
+                            except Exception as e:
+                                logger.warning(f"{self.plugin_name} 方案1异常：{str(e)}")
+                            
+                            # 方案2：使用带时间戳的新文件名
+                            try:
+                                logger.info(f"{self.plugin_name} 方案2：使用带时间戳的新文件名")
+                                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                                name_without_ext = os.path.splitext(filename)[0]
+                                ext = os.path.splitext(filename)[1]
+                                new_filename = f"{name_without_ext}_{timestamp}{ext}"
+                                new_upload_url = urljoin(base_url + '/', f"{webdav_path}/{new_filename}")
+                                
+                                logger.info(f"{self.plugin_name} 尝试使用新文件名上传: {new_filename}")
+                                final_response = requests.put(
+                                    new_upload_url,
+                                    data=file_content,
+                                    auth=successful_auth,
+                                    headers=method_headers,
+                                    timeout=30,
+                                    verify=False
+                                )
+                                
+                                if final_response.status_code in [200, 201, 204]:
+                                    logger.info(f"{self.plugin_name} 方案2成功：使用新文件名上传成功")
+                                    return True, None
+                                else:
+                                    logger.warning(f"{self.plugin_name} 方案2失败：新文件名上传返回状态码 {final_response.status_code}")
+                            except Exception as e:
+                                logger.warning(f"{self.plugin_name} 方案2异常：{str(e)}")
+                            
+                            # 方案3：尝试使用不同的Content-Type
+                            try:
+                                logger.info(f"{self.plugin_name} 方案3：尝试使用不同的Content-Type")
+                                alt_headers = method_headers.copy()
+                                alt_headers['Content-Type'] = 'application/x-tar'
+                                
+                                final_response = requests.put(
+                                    upload_url,
+                                    data=file_content,
+                                    auth=successful_auth,
+                                    headers=alt_headers,
+                                    timeout=30,
+                                    verify=False
+                                )
+                                
+                                if final_response.status_code in [200, 201, 204]:
+                                    logger.info(f"{self.plugin_name} 方案3成功：使用不同Content-Type上传成功")
+                                    return True, None
+                                else:
+                                    logger.warning(f"{self.plugin_name} 方案3失败：不同Content-Type上传返回状态码 {final_response.status_code}")
+                            except Exception as e:
+                                logger.warning(f"{self.plugin_name} 方案3异常：{str(e)}")
+                            
+                            # 所有方案都失败了
+                            error_msg = f"WebDAV上传失败：所有冲突解决方案均失败。原始状态码: 409"
+                            logger.error(f"{self.plugin_name} {error_msg}")
+                            return False, error_msg
+                        else:
+                            logger.warning(f"{self.plugin_name} {method} 方法上传失败，状态码: {response.status_code}, 响应: {response.text}")
+                            continue  # 尝试下一种方法
+
+                    except requests.exceptions.Timeout:
+                        logger.warning(f"{self.plugin_name} {method} 方法上传请求超时")
+                        continue
+                    except requests.exceptions.ConnectionError:
+                        logger.warning(f"{self.plugin_name} {method} 方法无法连接到WebDAV服务器")
+                        continue
+                    except requests.exceptions.RequestException as e:
+                        logger.warning(f"{self.plugin_name} {method} 方法上传请求失败: {str(e)}")
+                        continue
+
+            # 所有URL和方法都失败了
+            error_msg = f"WebDAV上传失败：所有上传URL和方法均失败。\n\n尝试的URL:\n" + "\n".join([f"- {url}" for url in possible_upload_urls]) + f"\n\n可能的原因：\n1. WebDAV服务器不支持PUT/POST方法\n2. 服务器配置不允许文件上传\n3. 认证信息不正确或权限不足\n4. 服务器需要特定的请求头或协议版本\n5. URL路径构建不正确\n\n建议：\n1. 检查WebDAV服务器配置，确保支持PUT方法\n2. 验证用户权限，确保有写入权限\n3. 尝试使用其他WebDAV客户端测试\n4. 联系WebDAV服务提供商确认支持的功能\n5. 检查WebDAV路径配置是否正确"
+            logger.error(f"{self.plugin_name} {error_msg}")
+            return False, error_msg
 
         except Exception as e:
             error_msg = f"WebDAV上传过程中发生错误: {str(e)}"

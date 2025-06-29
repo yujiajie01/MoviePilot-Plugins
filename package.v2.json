@@ -54,15 +54,16 @@
     "name": "PVE虚拟机守护神",
     "description": "PVE虚拟机守护神，全自动备份与恢复，支持本地与WebDAV双重保障。",
     "labels": "备份,自动化",
-    "version": "1.1.3",
+    "version": "1.1.4",
     "icon": "https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/proxmox.webp",
     "author": "M.Jinxi",
     "level": 2,
     "requirements": ["paramiko>=3.4.0", "pytz>=2023.3", "APScheduler>=3.10.1", "requests>=2.31.0"],
     "history": {
-      "v1.1.3": "修复多容器备份日志问题，优化前端API通知样式/类型。",
+      "v1.1.4": "兼容OpenList网盘。",
+      "v1.1.3": "修复多容器备份问题。",
       "v1.1.2": "修复浅色和幻紫主题下UI显示问题。",
-      "v1.1.1": "修复部分版本备份问题，优化多容器备份逻辑。",
+      "v1.1.1": "修复部分备份逻辑备份问题。",
       "v1.1.0": "新增恢复功能，支持恢复备份的虚拟机。",
       "v1.0.0": "首个正式版本"
     }
