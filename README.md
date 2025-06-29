@@ -38,19 +38,20 @@ MoviePilot第三方插件库，提供了一系列实用的插件来增强MoviePi
     - 🔄 智能重试机制
 
 **最新更新**：
-> `v1.2.0`  
-> 🔄 新增恢复功能，支持从本地和WebDAV备份恢复配置。  
-> 🎨 全面优化UI，适配浅色和幻紫主题。
+> `v1.2.1`  
+> 🔧 修复FastAPI路由注册问题，解决插件加载错误。  
+> 🎯 优化API接口配置，提升插件稳定性。
 
 <details>
 <summary>历史更新</summary>
 
+- `v1.2.0`：🔄 新增恢复功能，支持从本地和WebDAV备份恢复配置。🎨 全面优化UI，适配浅色和幻紫主题。
 - `v1.1.8`：🧹 新增一键清理历史记录功能。
 - `v1.1.7`：🐛 修复远程备份删除失败问题。
 - `v1.1.6`：🎨 新增波浪边框和科技风格通知样式，优化配置界面。
 - `v1.1.3`：☁️ 支持WebDAV远程备份，📦 本地备份管理。
 - `v1.1.1`：🎨 通知美化，⚠️ 增强失败提示，⚙️ 通知样式选择器。
-- `v1.0.0`：�� 初始版本。
+- `v1.0.0`：🚀 初始版本。
 </details>
 
 #### <img src="https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/cnlang.png" width="32" style="vertical-align:middle;"> 国语视界签到V2 (CnlangSigninV2)

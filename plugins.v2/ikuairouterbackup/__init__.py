@@ -30,7 +30,7 @@ class IkuaiRouterBackup(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/ikuai.png"
     # 插件版本
-    plugin_version = "1.2.0"
+    plugin_version = "1.2.1"
     # 插件作者
     plugin_author = "M.Jinxi"
     # 作者主页
@@ -215,10 +215,10 @@ class IkuaiRouterBackup(_PluginBase):
         return [
             {
                 "path": "/restore",
-                "endpoint": "restore_backup",
-                "method": "POST",
+                "endpoint": self._api_restore_backup,
+                "methods": ["POST"],
+                "summary": "执行恢复操作使用的API",
                 "description": "执行恢复操作",
-                "func": self._api_restore_backup
             }
         ]
 
