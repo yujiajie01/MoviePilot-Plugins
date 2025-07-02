@@ -118,7 +118,7 @@ class RandomPic(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/randompic.png"
     # 插件版本
-    plugin_version = "1.0"
+    plugin_version = "1.0.0"
     # 插件作者
     plugin_author = "M.Jinxi"
     # 作者主页
