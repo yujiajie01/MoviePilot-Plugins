@@ -77,7 +77,7 @@ class ImageHandler(BaseHTTPRequestHandler):
                 self.send_header('Content-Length', str(file_size))
                 self.send_header('Access-Control-Allow-Origin', '*')
                 # 添加缓存控制
-                self.send_header('Cache-Control', 'public, max-age=3600')  # 1小时缓存
+                self.send_header('Cache-Control', 'no-store') #禁止缓存
                 self.end_headers()
                 
                 # 分块发送图片内容
@@ -118,7 +118,7 @@ class RandomPic(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/randompic.png"
     # 插件版本
-    plugin_version = "1.0.0"
+    plugin_version = "1.0.1"
     # 插件作者
     plugin_author = "M.Jinxi"
     # 作者主页
@@ -212,7 +212,7 @@ class RandomPic(_PluginBase):
                                         "props": {
                                             "model": "port",
                                             "label": "服务端口",
-                                            "placeholder": "8080"
+                                            "placeholder": "8002"
                                         }
                                     }
                                 ]

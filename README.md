@@ -120,7 +120,7 @@ MoviePilot第三方插件库，提供了一系列实用的插件来增强MoviePi
 > ⚡ 支持即时备份功能。
 
 #### <img src="https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/randompic.png" width="32" style="vertical-align:middle;"> 随机图库 (RandomPic)
--   **版本**: `v1.0`
+-   **版本**: `v1.0.1`
 -   **作者**: [@M.Jinxi](https://github.com/xijin285)
 
 **简介**：
@@ -145,11 +145,14 @@ MoviePilot第三方插件库，提供了一系列实用的插件来增强MoviePi
     - 独立配置图片目录
 
 **最新更新**：
-> `v1.0`  
-> 🎉 首个正式版本  
-> 📱 支持横竖屏图片分类  
-> 🔍 自动识别设备类型  
-> 🚀 优化传输性能
+> `v1.0.1`  
+> 🚫 禁止缓存，实时刷新图片  
+
+<details>
+<summary>历史更新</summary>
+
+- `v1.0.0`：🎉 首个正式版本，📱 支持横竖屏图片分类，🔍 自动识别设备类型，🚀 优化传输性能。
+</details>
 
 #### <img src="https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/proxmox.webp" width="32" style="vertical-align:middle;"> PVE虚拟机守护神 (ProxmoxVEBackup)
 -   **版本**: `v1.1.5`
