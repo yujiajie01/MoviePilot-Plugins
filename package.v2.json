@@ -80,5 +80,17 @@
     "history": {
       "v1.0.0": "首个正式版本：支持夸克网盘基础操作。"
     }
+  },
+  "RandomPic": {
+    "name": "随机图库",
+    "description": "随机图片API服务,支持横屏/竖屏图片分类",
+    "labels": "图片,API",
+    "version": "1.0",
+    "icon": "https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/randompic.png",
+    "author": "M.Jinxi",
+    "level": 2,
+    "history": {
+      "v1.0": "首个正式版本：支持横竖屏图片分类、自动识别设备类型"
+    }
   }
 }

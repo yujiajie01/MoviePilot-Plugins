@@ -119,6 +119,38 @@ MoviePilot第三方插件库，提供了一系列实用的插件来增强MoviePi
 > 📊 提供完整的历史记录管理。  
 > ⚡ 支持即时备份功能。
 
+#### <img src="https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/randompic.png" width="32" style="vertical-align:middle;"> 随机图库 (RandomPic)
+-   **版本**: `v1.0`
+-   **作者**: [@M.Jinxi](https://github.com/xijin285)
+
+**简介**：
+> 随机图片API服务，支持横屏/竖屏图片分类，为您的应用提供优质随机图片资源。
+
+**主要功能**：
+- 🖼️ **智能分类**：
+    - 自动区分横屏和竖屏图片
+    - 根据访问设备自动选择合适图片
+- 📱 **设备识别**：
+    - 智能识别移动端/PC端
+    - 自动适配最佳图片尺寸
+- 🚀 **高性能服务**：
+    - 分块传输大文件
+    - 优化的缓冲区设置
+- 🔄 **API接口**：
+    - RESTful API设计
+    - 支持类型参数指定
+- 🌐 **跨域支持**：内置CORS支持，便于前端调用
+- ⚙️ **配置灵活**：
+    - 自定义端口设置
+    - 独立配置图片目录
+
+**最新更新**：
+> `v1.0`  
+> 🎉 首个正式版本  
+> 📱 支持横竖屏图片分类  
+> 🔍 自动识别设备类型  
+> 🚀 优化传输性能
+
 #### <img src="https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/proxmox.webp" width="32" style="vertical-align:middle;"> PVE虚拟机守护神 (ProxmoxVEBackup)
 -   **版本**: `v1.1.5`
 -   **作者**: [@M.Jinxi](https://github.com/xijin285)
