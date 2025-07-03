@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>随机图库 - 预览</title>
+    <link rel="icon" href="https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/randompic.png" type="image/png">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: #333;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            color: white;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .header p {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+
+        .controls {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            padding: 25px;
+            margin-bottom: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            backdrop-filter: blur(10px);
+        }
+
+        .control-group {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 20px;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: 500;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            display: inline-block;
+            text-align: center;
+        }
+
+        .btn-primary {
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-secondary {
+            background: #f8f9fa;
+            color: #495057;
+            border: 2px solid #e9ecef;
+        }
+
+        .btn-secondary:hover {
+            background: #e9ecef;
+            transform: translateY(-2px);
+        }
+
+        .btn-success {
+            background: linear-gradient(45deg, #28a745, #20c997);
+            color: white;
+        }
+
+        .btn-info {
+            background: linear-gradient(45deg, #17a2b8, #6f42c1);
+            color: white;
+        }
+
+        .image-container {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            padding: 30px;
+            text-align: center;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            backdrop-filter: blur(10px);
+            margin-bottom: 30px;
+        }
+
+        .image-display {
+            max-width: 100%;
+            max-height: 70vh;
+            border-radius: 10px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            transition: all 0.3s ease;
+        }
+
+        .image-display:hover {
+            transform: scale(1.02);
+        }
+
+        .loading {
+            display: none;
+            font-size: 1.2rem;
+            color: #6c757d;
+            margin: 20px 0;
+        }
+
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .stat-card {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 10px;
+            padding: 20px;
+            text-align: center;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            backdrop-filter: blur(10px);
+        }
+
+        .stat-number {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #667eea;
+            margin-bottom: 5px;
+        }
+
+        .stat-label {
+            color: #6c757d;
+            font-size: 0.9rem;
+        }
+
+        .api-info {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            backdrop-filter: blur(10px);
+        }
+
+        .api-info h3 {
+            margin-bottom: 15px;
+            color: #495057;
+        }
+
+        .api-endpoint {
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 5px;
+            padding: 10px;
+            margin: 10px 0;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+            word-break: break-all;
+        }
+
+        .copy-btn {
+            background: #6c757d;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            padding: 5px 10px;
+            cursor: pointer;
+            font-size: 0.8rem;
+            margin-left: 10px;
+        }
+
+        .copy-btn:hover {
+            background: #5a6268;
+        }
+
+        .toast {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: #28a745;
+            color: white;
+            padding: 15px 20px;
+            border-radius: 5px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+            transform: translateX(100%);
+            transition: transform 0.3s ease;
+            z-index: 1000;
+        }
+
+        .toast.show {
+            transform: translateX(0);
+        }
+
+        .footer {
+            text-align: center;
+            margin-top: 40px;
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 0.9rem;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 10px;
+            }
+            
+            .header h1 {
+                font-size: 2rem;
+            }
+            
+            .control-group {
+                flex-direction: column;
+            }
+            
+            .btn {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🖼️ 随机图库</h1>
+            <p>发现美丽的随机图片，支持横屏和竖屏分类</p>
+        </div>
+
+        <div class="controls">
+            <div class="control-group">
+                <button class="btn btn-primary" onclick="loadRandomImage()">🎲 随机图片</button>
+                <button class="btn btn-secondary" onclick="loadPCImage()">🖥️ 横屏图片</button>
+                <button class="btn btn-secondary" onclick="loadMobileImage()">📱 竖屏图片</button>
+                <button class="btn btn-success" onclick="downloadImage()">⬇️ 下载图片</button>
+                <button class="btn btn-info" onclick="refreshStats()">📊 刷新统计</button>
+            </div>
+        </div>
+
+        <div class="stats" id="stats">
+            <div class="stat-card">
+                <div class="stat-number" id="totalImages">-</div>
+                <div class="stat-label">总图片数</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="pcImages">-</div>
+                <div class="stat-label">横屏图片</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="mobileImages">-</div>
+                <div class="stat-label">竖屏图片</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="todayViews">-</div>
+                <div class="stat-label">今日访问</div>
+            </div>
+        </div>
+
+        <div class="image-container">
+            <div class="loading" id="loading">
+                <div class="spinner"></div>
+                <div>正在加载图片...</div>
+            </div>
+            <img id="imageDisplay" class="image-display" style="display: none;" alt="随机图片">
+        </div>
+
+        <div class="api-info">
+            <h3>🔗 API 接口</h3>
+            <div class="api-endpoint">
+                <span>自动识别设备: </span>
+                <code id="apiRandom">http://{HOST}/random</code>
+                <button class="copy-btn" onclick="copyToClipboard('apiRandom')">复制</button>
+            </div>
+            <div class="api-endpoint">
+                <span>指定横屏图片: </span>
+                <code id="apiPC">http://{HOST}/random?type=pc</code>
+                <button class="copy-btn" onclick="copyToClipboard('apiPC')">复制</button>
+            </div>
+            <div class="api-endpoint">
+                <span>指定竖屏图片: </span>
+                <code id="apiMobile">http://{HOST}/random?type=mobile</code>
+                <button class="copy-btn" onclick="copyToClipboard('apiMobile')">复制</button>
+            </div>
+            <div class="api-endpoint">
+                <span>批量获取图片: </span>
+                <code id="apiBatch">http://{HOST}/random?count=5</code>
+                <button class="copy-btn" onclick="copyToClipboard('apiBatch')">复制</button>
+            </div>
+        </div>
+
+        <div class="footer">
+            <p>随机图库 v1.0.2 | 由 M.Jinxi 开发</p>
+        </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script>
+        const host = window.location.host;
+        let currentImageUrl = '';
+
+        // 初始化页面
+        document.addEventListener('DOMContentLoaded', function() {
+            updateApiUrls();
+            loadRandomImage();
+            refreshStats();
+        });
+
+        // 更新API URL
+        function updateApiUrls() {
+            document.getElementById('apiRandom').textContent = `http://${host}/random`;
+            document.getElementById('apiPC').textContent = `http://${host}/random?type=pc`;
+            document.getElementById('apiMobile').textContent = `http://${host}/random?type=mobile`;
+            document.getElementById('apiBatch').textContent = `http://${host}/random?count=5`;
+        }
+
+        // 加载随机图片
+        function loadRandomImage() {
+            loadImage('/random');
+        }
+
+        // 加载横屏图片
+        function loadPCImage() {
+            loadImage('/random?type=pc');
+        }
+
+        // 加载竖屏图片
+        function loadMobileImage() {
+            loadImage('/random?type=mobile');
+        }
+
+        // 加载图片
+        function loadImage(url) {
+            const loading = document.getElementById('loading');
+            const imageDisplay = document.getElementById('imageDisplay');
+            
+            loading.style.display = 'block';
+            imageDisplay.style.display = 'none';
+            
+            // 添加时间戳防止缓存
+            const timestamp = new Date().getTime();
+            const imageUrl = `${url}&t=${timestamp}`;
+            currentImageUrl = imageUrl;
+            
+            const img = new Image();
+            img.onload = function() {
+                loading.style.display = 'none';
+                imageDisplay.style.display = 'block';
+                imageDisplay.src = imageUrl;
+            };
+            
+            img.onerror = function() {
+                loading.style.display = 'none';
+                showToast('图片加载失败，请重试', 'error');
+            };
+            
+            img.src = imageUrl;
+        }
+
+        // 下载图片
+        function downloadImage() {
+            if (!currentImageUrl) {
+                showToast('请先加载一张图片', 'warning');
+                return;
+            }
+            
+            const link = document.createElement('a');
+            link.href = currentImageUrl;
+            link.download = `random_image_${new Date().getTime()}.jpg`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            showToast('图片下载已开始');
+        }
+
+        // 刷新统计
+        function refreshStats() {
+            fetch('/stats')
+                .then(res => res.json())
+                .then(data => {
+                    document.getElementById('totalImages').textContent = data.total;
+                    document.getElementById('pcImages').textContent = data.pc;
+                    document.getElementById('mobileImages').textContent = data.mobile;
+                    document.getElementById('todayViews').textContent = data.today;
+                    showToast('统计数据已更新');
+                })
+                .catch(() => {
+                    showToast('统计数据获取失败', 'error');
+                });
+        }
+
+        // 复制到剪贴板
+        function copyToClipboard(elementId) {
+            const element = document.getElementById(elementId);
+            const text = element.textContent;
+            
+            navigator.clipboard.writeText(text).then(function() {
+                showToast('API地址已复制到剪贴板');
+            }).catch(function() {
+                // 降级方案
+                const textArea = document.createElement('textarea');
+                textArea.value = text;
+                document.body.appendChild(textArea);
+                textArea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textArea);
+                showToast('API地址已复制到剪贴板');
+            });
+        }
+
+        // 显示提示消息
+        function showToast(message, type = 'success') {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.className = `toast show ${type}`;
+            
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 3000);
+        }
+
+        // 键盘快捷键
+        document.addEventListener('keydown', function(e) {
+            switch(e.key) {
+                case 'r':
+                case 'R':
+                    if (e.ctrlKey || e.metaKey) {
+                        e.preventDefault();
+                        loadRandomImage();
+                    }
+                    break;
+                case 'p':
+                case 'P':
+                    if (e.ctrlKey || e.metaKey) {
+                        e.preventDefault();
+                        loadPCImage();
+                    }
+                    break;
+                case 'm':
+                case 'M':
+                    if (e.ctrlKey || e.metaKey) {
+                        e.preventDefault();
+                        loadMobileImage();
+                    }
+                    break;
+                case 'd':
+                case 'D':
+                    if (e.ctrlKey || e.metaKey) {
+                        e.preventDefault();
+                        downloadImage();
+                    }
+                    break;
+            }
+        });
+
+        // 图片点击放大
+        document.getElementById('imageDisplay').addEventListener('click', function() {
+            if (this.style.cursor === 'zoom-in') {
+                this.style.cursor = 'zoom-out';
+                this.style.maxHeight = 'none';
+                this.style.maxWidth = 'none';
+            } else {
+                this.style.cursor = 'zoom-in';
+                this.style.maxHeight = '70vh';
+                this.style.maxWidth = '100%';
+            }
+        });
+    </script>
+</body>
+</html> 

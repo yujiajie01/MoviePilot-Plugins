@@ -16,11 +16,33 @@ from app.core.config import settings
 from app.log import logger
 from app.plugins import _PluginBase
 
+# ====== 统计相关全局变量和锁（插入到 import 之后，class 之前）======
+visit_lock = threading.Lock()
+today_visit_count = 0
+today_date = datetime.now().date()
+# =========================================================
 
 class ImageHandler(BaseHTTPRequestHandler):
     def do_GET(self):
+        global today_visit_count, today_date
+        # ====== 1. 处理 /stats 路由 ======
+        if self.path.startswith('/stats'):
+            self._handle_stats_request()
+            return
+        # ====== 2. 统计 /random 访问量 ======
+        if self.path.startswith('/random'):
+            with visit_lock:
+                now = datetime.now().date()
+                if now != today_date:
+                    today_visit_count = 0
+                    today_date = now
+                today_visit_count += 1
         try:
             logger.info(f"收到请求: {self.path}")
+            
+            if self.path.startswith('/preview') or self.path == '/':
+                self._handle_preview_request()
+                return
             
             # 只处理/random请求
             if not self.path.startswith('/random'):
@@ -109,6 +131,79 @@ class ImageHandler(BaseHTTPRequestHandler):
         """重写日志方法,避免重复输出访问日志"""
         return
 
+    def _handle_preview_request(self):
+        """处理Web预览页面请求"""
+        try:
+            # 获取当前服务器信息
+            host = self.headers.get('Host', 'localhost')
+            
+            # 读取HTML模板文件
+            html_file_path = os.path.join(os.path.dirname(__file__), 'preview.html')
+            
+            if not os.path.exists(html_file_path):
+                logger.error(f"HTML模板文件不存在: {html_file_path}")
+                self.send_error(500, 'Template file not found')
+                return
+            
+            try:
+                with open(html_file_path, 'r', encoding='utf-8') as f:
+                    html_content = f.read()
+            except Exception as e:
+                logger.error(f"读取HTML模板文件失败: {str(e)}")
+                self.send_error(500, 'Failed to read template file')
+                return
+            
+            # 替换模板中的占位符
+            html_content = html_content.replace('{HOST}', host)
+            
+            # 发送HTML响应
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/html; charset=utf-8')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.send_header('Cache-Control', 'no-store')
+            self.end_headers()
+            
+            self.wfile.write(html_content.encode('utf-8'))
+            logger.info("Web预览页面返回成功")
+            
+        except Exception as e:
+            logger.error(f'处理Web预览页面请求失败: {str(e)}')
+            try:
+                self.send_error(500, 'Internal Server Error')
+            except:
+                pass
+
+    def _handle_stats_request(self):
+        """处理统计数据请求，返回图片数量和今日访问量"""
+        try:
+            pc_path = self.server.pc_path
+            mobile_path = self.server.mobile_path
+            # 统计横屏图片数量
+            pc_count = sum(1 for ext in ('*.jpg', '*.jpeg', '*.png', '*.gif', '*.webp') for _ in Path(pc_path).glob(ext))
+            # 统计竖屏图片数量
+            mobile_count = sum(1 for ext in ('*.jpg', '*.jpeg', '*.png', '*.gif', '*.webp') for _ in Path(mobile_path).glob(ext))
+            total = pc_count + mobile_count
+            with visit_lock:
+                today = today_visit_count
+            # 返回 JSON
+            import json
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(json.dumps({
+                "total": total,
+                "pc": pc_count,
+                "mobile": mobile_count,
+                "today": today
+            }).encode('utf-8'))
+        except Exception as e:
+            logger.error(f"统计接口异常: {str(e)}")
+            try:
+                self.send_error(500, 'Internal Server Error')
+            except:
+                pass
+
 
 class RandomPic(_PluginBase):
     # 插件名称
@@ -118,7 +213,7 @@ class RandomPic(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/randompic.png"
     # 插件版本
-    plugin_version = "1.0.1"
+    plugin_version = "1.0.2"
     # 插件作者
     plugin_author = "M.Jinxi"
     # 作者主页
@@ -270,90 +365,93 @@ class RandomPic(_PluginBase):
             {
                 "component": "VCard",
                 "props": {
-                    "variant": "outlined",
-                    "class": "mt-3"
+                    "elevation": 1,
+                    "class": "mb-4",
+                    "style": "border-radius: 12px; background: rgba(33,150,243,0.06);"
                 },
                 "content": [
                     {
                         "component": "VCardTitle",
-                        "props": {"class": "text-h6"},
-                        "text": "📖 插件使用说明"
+                        "props": {"style": "font-size: 20px; font-weight: bold; color: #1976d2; display: flex; align-items: center;"},
+                        "content": [
+                            {
+                                "component": "VIcon",
+                                "props": {"color": "info", "size": 24},
+                                "text": "mdi-information"
+                            },
+                            {
+                                "component": "span",
+                                "props": {"style": "margin-left: 8px;"},
+                                "text": "插件使用与API说明"
+                            }
+                        ]
                     },
                     {
                         "component": "VCardText",
                         "content": [
                             {
-                                "component": "VAlert",
-                                "props": {
-                                    "type": "info",
-                                    "variant": "tonal",
-                                    "class": "mb-2"
-                                },
+                                "component": "VList",
+                                "props": {"density": "compact", "style": "background:transparent;box-shadow:none;"},
                                 "content": [
                                     {
-                                        "component": "div",
-                                        "props": {"class": "text-h6 mb-2"},
-                                        "text": "基础使用说明"
+                                        "component": "VListItem",
+                                        "props": {"density": "compact", "style": "align-items:center;"},
+                                        "content": [
+                                            {"component": "VListItemIcon","content": [{"component": "VIcon", "props": {"color": "primary", "size": 18}, "text": "mdi-numeric-1-circle"}]},
+                                            {"component": "span", "props": {"style": "display:inline-block;vertical-align:middle;white-space:nowrap;"}, "text": "配置服务端口(默认8002)"}
+                                        ]
+                                    },
+                                    {
+                                        "component": "VListItem",
+                                        "props": {"density": "compact", "style": "align-items:center;"},
+                                        "content": [
+                                            {"component": "VListItemIcon","content": [{"component": "VIcon", "props": {"color": "primary", "size": 18}, "text": "mdi-numeric-2-circle"}]},
+                                            {"component": "span", "props": {"style": "display:inline-block;vertical-align:middle;white-space:nowrap;"}, "text": "Docker环境需要映射端口和目录"}
+                                        ]
+                                    },
+                                    {
+                                        "component": "VListItem",
+                                        "props": {"density": "compact", "style": "align-items:center;"},
+                                        "content": [
+                                            {"component": "VListItemIcon","content": [{"component": "VIcon", "props": {"color": "primary", "size": 18}, "text": "mdi-numeric-3-circle"}]},
+                                            {"component": "span", "props": {"style": "display:inline-block;vertical-align:middle;white-space:nowrap;"}, "text": "支持jpg/jpeg/png/gif/webp格式"}
+                                        ]
                                     },
                                     {
                                         "component": "VListItem",
                                         "props": {"density": "compact"},
-                                        "content": [{"component": "VListItemSubtitle", "text": "1. 配置服务端口(默认8002)"}]
+                                        "content": [
+                                            {"component": "VListItemIcon","content": [{"component": "VIcon", "props": {"color": "success", "size": 18}, "text": "mdi-numeric-1-circle"}]},
+                                            {"component": "VListItemSubtitle", "text": "Web预览页面: ", "props": {"style": "display:inline;"}},
+                                            {"component": "span", "props": {"style": "font-family:monospace;color:#388e3c;"}, "text": "http://IP:端口/preview"}
+                                        ]
                                     },
                                     {
                                         "component": "VListItem",
                                         "props": {"density": "compact"},
-                                        "content": [{"component": "VListItemSubtitle", "text": "2. 横屏图片目录存放宽>高的图片(如1920x1080)"}]
+                                        "content": [
+                                            {"component": "VListItemIcon","content": [{"component": "VIcon", "props": {"color": "success", "size": 18}, "text": "mdi-numeric-2-circle"}]},
+                                            {"component": "VListItemSubtitle", "text": "自动识别设备: ", "props": {"style": "display:inline;"}},
+                                            {"component": "span", "props": {"style": "font-family:monospace;color:#388e3c;"}, "text": "http://IP:端口/random"}
+                                        ]
                                     },
                                     {
                                         "component": "VListItem",
                                         "props": {"density": "compact"},
-                                        "content": [{"component": "VListItemSubtitle", "text": "3. 竖屏图片目录存放高>宽的图片(如1080x1920)"}]
+                                        "content": [
+                                            {"component": "VListItemIcon","content": [{"component": "VIcon", "props": {"color": "success", "size": 18}, "text": "mdi-numeric-3-circle"}]},
+                                            {"component": "VListItemSubtitle", "text": "指定横屏图片: ", "props": {"style": "display:inline;"}},
+                                            {"component": "span", "props": {"style": "font-family:monospace;color:#388e3c;"}, "text": "http://IP:端口/random?type=pc"}
+                                        ]
                                     },
                                     {
                                         "component": "VListItem",
                                         "props": {"density": "compact"},
-                                        "content": [{"component": "VListItemSubtitle", "text": "4. 启用插件后即可通过API访问"}]
-                                    },
-                                    {
-                                        "component": "VListItem",
-                                        "props": {"density": "compact"},
-                                        "content": [{"component": "VListItemSubtitle", "text": "5. Docker环境需要映射端口和目录"}]
-                                    },
-                                    {
-                                        "component": "VListItem",
-                                        "props": {"density": "compact"},
-                                        "content": [{"component": "VListItemSubtitle", "text": "6. 支持jpg/jpeg/png/gif/webp格式"}]
-                                    }
-                                ]
-                            },
-                            {
-                                "component": "VAlert",
-                                "props": {
-                                    "type": "success",
-                                    "variant": "tonal",
-                                    "class": "mb-2"
-                                },
-                                "content": [
-                                    {
-                                        "component": "div",
-                                        "props": {"class": "text-h6 mb-2"},
-                                        "text": "API接口说明"
-                                    },
-                                    {
-                                        "component": "VListItem",
-                                        "props": {"density": "compact"},
-                                        "content": [{"component": "VListItemSubtitle", "text": "1. 自动识别设备: http://IP:端口/random"}]
-                                    },
-                                    {
-                                        "component": "VListItem",
-                                        "props": {"density": "compact"},
-                                        "content": [{"component": "VListItemSubtitle", "text": "2. 指定横屏图片: http://IP:端口/random?type=pc"}]
-                                    },
-                                    {
-                                        "component": "VListItem",
-                                        "props": {"density": "compact"},
-                                        "content": [{"component": "VListItemSubtitle", "text": "3. 指定竖屏图片: http://IP:端口/random?type=mobile"}]
+                                        "content": [
+                                            {"component": "VListItemIcon","content": [{"component": "VIcon", "props": {"color": "success", "size": 18}, "text": "mdi-numeric-4-circle"}]},
+                                            {"component": "VListItemSubtitle", "text": "指定竖屏图片: ", "props": {"style": "display:inline;"}},
+                                            {"component": "span", "props": {"style": "font-family:monospace;color:#388e3c;"}, "text": "http://IP:端口/random?type=mobile"}
+                                        ]
                                     }
                                 ]
                             }
@@ -454,5 +552,4 @@ class RandomPic(_PluginBase):
                 self._server_thread.join()
                 self._server_thread = None
         except Exception as e:
-            logger.error(f"停止服务失败: {str(e)}") 
             logger.error(f"停止服务失败: {str(e)}") 
