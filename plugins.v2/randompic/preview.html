@@ -432,20 +432,42 @@
         // 复制到剪贴板
         function copyToClipboard(elementId) {
             const element = document.getElementById(elementId);
+            if (!element) {
+                alert('未找到要复制的内容');
+                return;
+            }
             const text = element.textContent;
-            
-            navigator.clipboard.writeText(text).then(function() {
-                showToast('API地址已复制到剪贴板');
-            }).catch(function() {
-                // 降级方案
-                const textArea = document.createElement('textarea');
-                textArea.value = text;
-                document.body.appendChild(textArea);
-                textArea.select();
+            if (!text) {
+                alert('没有可复制的内容');
+                return;
+            }
+            // 调试输出
+            // console.log('复制内容:', text);
+            if (navigator.clipboard && window.isSecureContext) {
+                navigator.clipboard.writeText(text).then(function() {
+                    showToast('API地址已复制到剪贴板');
+                }).catch(function() {
+                    fallbackCopyText(text);
+                });
+            } else {
+                fallbackCopyText(text);
+            }
+        }
+        function fallbackCopyText(text) {
+            const textArea = document.createElement('textarea');
+            textArea.value = text;
+            textArea.style.position = 'fixed';
+            textArea.style.top = '-1000px';
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+            try {
                 document.execCommand('copy');
-                document.body.removeChild(textArea);
                 showToast('API地址已复制到剪贴板');
-            });
+            } catch (err) {
+                alert('复制失败，请手动复制');
+            }
+            document.body.removeChild(textArea);
         }
 
         // 显示提示消息

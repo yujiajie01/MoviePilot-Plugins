@@ -38,7 +38,7 @@ class ImageHandler(BaseHTTPRequestHandler):
                     today_date = now
                 today_visit_count += 1
         try:
-            logger.info(f"收到请求: {self.path}")
+            # logger.info(f"收到请求: {self.path}")
             
             if self.path.startswith('/preview') or self.path == '/':
                 self._handle_preview_request()
@@ -60,15 +60,15 @@ class ImageHandler(BaseHTTPRequestHandler):
             ua = self.headers.get('User-Agent', '')
             is_mobile = bool(re.search(r'(phone|pad|pod|iPhone|iPod|ios|iPad|Android|Mobile|BlackBerry|IEMobile|MQQBrowser|JUC|Fennec|wOSBrowser|BrowserNG|WebOS|Symbian|Windows Phone)', ua, re.I))
             
-            logger.info(f"设备类型: {'移动端' if is_mobile else 'PC端'}")
+            # logger.info(f"设备类型: {'移动端' if is_mobile else 'PC端'}")
             
             # 根据条件选择目录
             if type_param == 'mobile' or (not type_param and is_mobile):
                 image_dir = self.server.mobile_path
-                logger.info(f"使用竖屏图片目录: {image_dir}")
+                # logger.info(f"使用竖屏图片目录: {image_dir}")
             else:
                 image_dir = self.server.pc_path
-                logger.info(f"使用横屏图片目录: {image_dir}")
+                # logger.info(f"使用横屏图片目录: {image_dir}")
                 
             # 获取随机图片
             image_files = []
@@ -81,7 +81,7 @@ class ImageHandler(BaseHTTPRequestHandler):
                 return
                 
             image_path = str(random.choice(image_files))
-            logger.info(f"选择的图片: {image_path}")
+            # logger.info(f"选择的图片: {image_path}")
             
             try:
                 # 获取文件类型和大小
@@ -114,7 +114,7 @@ class ImageHandler(BaseHTTPRequestHandler):
                             logger.warning(f"客户端断开连接: {str(e)}")
                             return
                             
-                logger.info("图片发送成功")
+                logger.info(f"图片发送成功: {image_path}")
                     
             except Exception as e:
                 logger.error(f'发送图片失败: {str(e)}')
@@ -164,7 +164,7 @@ class ImageHandler(BaseHTTPRequestHandler):
             self.end_headers()
             
             self.wfile.write(html_content.encode('utf-8'))
-            logger.info("Web预览页面返回成功")
+            # logger.info("Web预览页面返回成功")
             
         except Exception as e:
             logger.error(f'处理Web预览页面请求失败: {str(e)}')
@@ -213,7 +213,7 @@ class RandomPic(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/randompic.png"
     # 插件版本
-    plugin_version = "1.0.2"
+    plugin_version = "1.0.3"
     # 插件作者
     plugin_author = "M.Jinxi"
     # 作者主页
@@ -245,7 +245,7 @@ class RandomPic(_PluginBase):
 
         if self._enabled:
             self._scheduler = BackgroundScheduler(timezone=settings.TZ)
-            logger.info("随机图库服务启动中...")
+            # logger.info("随机图库服务启动中...")
             self._scheduler.add_job(
                 func=self.__run_service,
                 trigger="date",
@@ -485,8 +485,8 @@ class RandomPic(_PluginBase):
         pc_path = os.path.abspath(self._pc_path)
         mobile_path = os.path.abspath(self._mobile_path)
         
-        logger.info(f"横屏图片目录: {pc_path}")
-        logger.info(f"竖屏图片目录: {mobile_path}")
+        # logger.info(f"横屏图片目录: {pc_path}")
+        # logger.info(f"竖屏图片目录: {mobile_path}")
 
         if not os.path.exists(pc_path):
             logger.error(f"横屏图片目录不存在: {pc_path}")
@@ -498,7 +498,7 @@ class RandomPic(_PluginBase):
 
         try:
             port = int(self._port)
-            logger.info(f"尝试启动HTTP服务器在端口: {port}")
+            # logger.info(f"尝试启动HTTP服务器在端口: {port}")
             
             # 检查端口是否被占用
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
