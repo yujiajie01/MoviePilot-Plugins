@@ -31,7 +31,7 @@ class OpenWrtBackup(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/openwrt.webp"
     # 插件版本
-    plugin_version = "1.0.0"
+    plugin_version = "1.0.1"
     # 插件作者
     plugin_author = "M.Jinxi"
     # 作者主页
@@ -626,6 +626,25 @@ class OpenWrtBackup(_PluginBase):
             if exit_status != 0:
                 error_msg = stderr.read().decode().strip()
                 return False, f"重命名备份文件失败: {error_msg}", None
+            
+            # 延迟5秒，等待文件写入完成
+            time.sleep(5)
+            # 轮询检测文件存在且大小大于0，最多等10秒
+            file_ready = False
+            for _ in range(10):
+                stdin, stdout, stderr = ssh.exec_command(f'ls -l {temp_remote_path}')
+                output = stdout.read().decode()
+                if 'backup' in output:
+                    try:
+                        size = int(output.split()[4])
+                        if size > 0:
+                            file_ready = True
+                            break
+                    except Exception:
+                        pass
+                time.sleep(1)
+            if not file_ready:
+                return False, f"备份文件未生成或大小为0: {temp_remote_path}", None
             
             # 如果启用了本地备份，下载文件
             if self._enable_local_backup:

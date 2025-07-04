@@ -17,7 +17,7 @@ MoviePilot第三方插件库，提供了一系列实用的插件来增强MoviePi
 ## 📦 插件列表
 
 #### <img src="https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/ikuai.png" width="32" style="vertical-align:middle;"> 爱快路由备份助手 (IkuaiRouterBackup)
-- **版本**: `v1.2.0`
+- **版本**: `v1.2.1`
 - **作者**: [@M.Jinxi](https://github.com/xijin285)
 
 **简介**：
@@ -91,7 +91,7 @@ MoviePilot第三方插件库，提供了一系列实用的插件来增强MoviePi
 </details>
 
 #### <img src="https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/openwrt.webp" width="32" style="vertical-align:middle;"> OpenWrt路由备份助手 (OpenWrtBackup)
--   **版本**: `v1.0.0`
+-   **版本**: `v1.0.1`
 -   **作者**: [@M.Jinxi](https://github.com/xijin285)
 
 **简介**：
@@ -110,14 +110,21 @@ MoviePilot第三方插件库，提供了一系列实用的插件来增强MoviePi
 - 🔄 **容错机制**：自动重试连接，异常处理
 
 **最新更新**：
-> `v1.0.0`  
-> 🎉 首个正式版本发布。  
-> 🔐 支持SSH密码和密钥两种认证方式。  
-> 💾 实现本地备份和WebDAV云端备份功能。  
-> ⏰ 支持自定义定时备份任务。  
-> 🔔 集成多种通知样式。  
-> 📊 提供完整的历史记录管理。  
-> ⚡ 支持即时备份功能。
+> `v1.0.1`  
+> 🔧 修复部分环境下备份文件未生成或大小为0的问题  
+> ⏳ mv命令后延迟并轮询检测备份文件，确保文件写入完成后再下载  
+
+<details>
+<summary>历史更新</summary>
+
+- `v1.0.0`：🎉 首个正式版本发布。  
+  🔐 支持SSH密码和密钥两种认证方式。  
+  💾 实现本地备份和WebDAV云端备份功能。  
+  ⏰ 支持自定义定时备份任务。  
+  🔔 集成多种通知样式。  
+  📊 提供完整的历史记录管理。  
+  ⚡ 支持即时备份功能。
+</details>
 
 #### <img src="https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/randompic.png" width="32" style="vertical-align:middle;"> 随机图库 (RandomPic)
 -   **版本**: `v1.0.3`
@@ -151,7 +158,7 @@ MoviePilot第三方插件库，提供了一系列实用的插件来增强MoviePi
 <details>
 <summary>历史更新</summary>
 
-- `v1.0.2`：��️ 新增可视化预览页面，统计数据查看
+- `v1.0.2`：️ 新增可视化预览页面，统计数据查看
 - `v1.0.1`：🚫 禁止缓存，实时刷新图片  
 - `v1.0.0`：🎉 首个正式版本，📱 支持横竖屏图片分类，🔍 自动识别设备类型，🚀 优化传输性能。
 </details>
