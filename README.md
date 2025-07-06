@@ -225,6 +225,32 @@ MoviePilot第三方插件库，提供了一系列实用的插件来增强MoviePi
 > `v1.0.0`  
 > 🎉 首个正式版本：支持夸克网盘基础操作、存储集成等功能。
 
+#### <img src="https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/cfipselector.png" width="32" style="vertical-align:middle;"> PT云盾优选 (CFIPSelector)
+- **版本**: `v1.0.0`
+- **作者**: [@M.Jinxi](https://github.com/xijin285)
+
+**简介**：
+> Cloudflare智能IP优选，自动写入hosts，助力PT站点极速访问。
+
+**主要功能**：
+- 🛡️ **Cloudflare IP优选**：智能筛选最优Cloudflare节点，提升站点访问速度
+- 🖥️ **自动写入hosts**：一键将优选IP写入系统hosts，无需手动配置
+- 🌐 **多站点测速**：支持自定义多个PT站点，自动批量测速
+- ⏰ **定时任务/一键运行**：支持定时自动优选，也可手动立即执行
+- 🔔 **多渠道通知**：优选结果自动推送至微信、Telegram等多平台
+- 📊 **状态可视化**：界面展示当前优选IP、检测站点、历史记录等信息
+- ⚙️ **灵活配置**：支持自定义数据中心、IP类型、延迟阈值等参数
+
+**最新更新**：
+> `v1.0.0`  
+> 🛡️ 首个正式版，集成Cloudflare IP优选、自动hosts写入、多站点测速、定时任务与多渠道通知等核心功能。
+
+<details>
+<summary>历史更新</summary>
+
+- `v1.0.0`：🛡️ 首发，支持Cloudflare IP优选、自动写入hosts、多站点测速、定时任务与多渠道通知推送。
+</details>
+
 ## ⚠️ 注意事项
 
 1.  本插件库中的插件均为个人维护，使用前请仔细阅读说明。
