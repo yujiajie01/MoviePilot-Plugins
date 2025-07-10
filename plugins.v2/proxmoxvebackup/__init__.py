@@ -17,17 +17,18 @@ from app.core.config import settings
 from app.log import logger
 from app.plugins import _PluginBase
 from app.schemas import NotificationType
+from .pve import get_pve_status, get_container_status, get_qemu_status
 
 
 class ProxmoxVEBackup(_PluginBase):
     # 插件名称
     plugin_name = "PVE虚拟机守护神"
     # 插件描述
-    plugin_desc = "PVE虚拟机守护神，自动化备份与恢复容器，提供完整的备份管理解决方案。"
+    plugin_desc = "一站式PVE虚拟化管理平台，智能自动化集成可视化界面高效掌控虚拟机与容器"
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/proxmox.webp"
     # 插件版本
-    plugin_version = "1.1.5"
+    plugin_version = "2.0"
     # 插件作者
     plugin_author = "M.Jinxi"
     # 作者主页
@@ -53,7 +54,7 @@ class ProxmoxVEBackup(_PluginBase):
 
     # 配置属性
     _enabled: bool = False
-    _cron: str = "0 3 * * *"
+    _cron: str = "0 3 * * *"  # 新增：定时任务cron表达式
     _onlyonce: bool = False
     _notify: bool = False
     _retry_count: int = 0  # 默认不重试
@@ -70,7 +71,7 @@ class ProxmoxVEBackup(_PluginBase):
     # 备份配置
     _enable_local_backup: bool = True  # 本地备份开关
     _backup_path: str = ""
-    _keep_backup_num: int = 7
+    _keep_backup_num: int = 5
     _backup_vmid: str = ""  # 要备份的容器ID，逗号分隔
     _storage_name: str = "local"  # 存储名称
     _backup_mode: str = "snapshot"  # 备份模式，默认snapshot
@@ -99,42 +100,28 @@ class ProxmoxVEBackup(_PluginBase):
     _instance = None  # 单例实例
 
     def init_plugin(self, config: Optional[dict] = None):
-        # 加载上次的配置哈希
-        self._last_config_hash = self.get_data('last_config_hash')
-        
-        # 检查是否真的需要重新初始化
-        if self._should_skip_reinit(config):
-            logger.debug(f"{self.plugin_name} 配置未发生实质性变更，跳过重新初始化")
-            return
-            
-        # 确保先停止已有的服务
-        self._stopped = False  # 启动前重置停止标志
+        # 停止已有服务，防止多实例冲突
         self.stop_service()
-        
         self._lock = threading.Lock()
-        self._restore_lock = threading.Lock()  # 初始化恢复锁
-        self._global_task_lock = threading.Lock()  # 初始化全局任务锁
+        self._restore_lock = threading.Lock()
+        self._global_task_lock = threading.Lock()
+        self._stopped = False
 
-        # 首先加载已保存的配置
+        # 加载配置
         saved_config = self.get_config()
         if saved_config:
-            # 使用已保存的配置更新默认值
             self._enabled = bool(saved_config.get("enabled", False))
             self._cron = str(saved_config.get("cron", "0 3 * * *"))
             self._onlyonce = bool(saved_config.get("onlyonce", False))
             self._notify = bool(saved_config.get("notify", False))
             self._retry_count = int(saved_config.get("retry_count", 0))
             self._retry_interval = int(saved_config.get("retry_interval", 60))
-            self._notification_message_type = str(saved_config.get("notification_message_type", "Plugin"))  # 新增
-            
-            # SSH配置
+            self._notification_message_type = str(saved_config.get("notification_message_type", "Plugin"))
             self._pve_host = str(saved_config.get("pve_host", ""))
             self._ssh_port = int(saved_config.get("ssh_port", 22))
             self._ssh_username = str(saved_config.get("ssh_username", "root"))
             self._ssh_password = str(saved_config.get("ssh_password", ""))
             self._ssh_key_file = str(saved_config.get("ssh_key_file", ""))
-            
-            # 备份配置
             self._storage_name = str(saved_config.get("storage_name", "local"))
             self._enable_local_backup = bool(saved_config.get("enable_local_backup", True))
             self._backup_mode = str(saved_config.get("backup_mode", "snapshot"))
@@ -142,16 +129,13 @@ class ProxmoxVEBackup(_PluginBase):
             self._backup_vmid = str(saved_config.get("backup_vmid", ""))
             self._auto_delete_after_download = bool(saved_config.get("auto_delete_after_download", False))
             self._download_all_backups = bool(saved_config.get("download_all_backups", False))
-            
             configured_backup_path = str(saved_config.get("backup_path", "")).strip()
             if not configured_backup_path:
                 self._backup_path = str(self.get_data_path() / "actual_backups")
                 logger.info(f"{self.plugin_name} 备份文件存储路径未配置，使用默认: {self._backup_path}")
             else:
                 self._backup_path = configured_backup_path
-            self._keep_backup_num = int(saved_config.get("keep_backup_num", 7))
-            
-            # WebDAV配置
+            self._keep_backup_num = int(saved_config.get("keep_backup_num", 5))
             self._enable_webdav = bool(saved_config.get("enable_webdav", False))
             self._webdav_url = str(saved_config.get("webdav_url", ""))
             self._webdav_username = str(saved_config.get("webdav_username", ""))
@@ -159,8 +143,6 @@ class ProxmoxVEBackup(_PluginBase):
             self._webdav_path = str(saved_config.get("webdav_path", ""))
             self._webdav_keep_backup_num = int(saved_config.get("webdav_keep_backup_num", 7))
             self._clear_history = bool(saved_config.get("clear_history", False))
-
-            # 恢复配置
             self._enable_restore = bool(saved_config.get("enable_restore", False))
             self._restore_storage = str(saved_config.get("restore_storage", "local"))
             self._restore_vmid = str(saved_config.get("restore_vmid", ""))
@@ -168,113 +150,29 @@ class ProxmoxVEBackup(_PluginBase):
             self._restore_skip_existing = bool(saved_config.get("restore_skip_existing", True))
             self._restore_file = str(saved_config.get("restore_file", ""))
             self._restore_now = bool(saved_config.get("restore_now", False))
-
-        # 如果有新的配置传入，使用新配置覆盖
+            
+        # 新配置覆盖
         if config:
-            if "enabled" in config:
-                self._enabled = bool(config["enabled"])
-            if "cron" in config:
-                self._cron = str(config["cron"])
-            if "onlyonce" in config:
-                self._onlyonce = bool(config["onlyonce"])
-            if "notify" in config:
-                self._notify = bool(config["notify"])
-            if "retry_count" in config:
-                self._retry_count = int(config["retry_count"])
-            if "retry_interval" in config:
-                self._retry_interval = int(config["retry_interval"])
-            if "notification_message_type" in config:
-                self._notification_message_type = str(config["notification_message_type"])
-            
-            # SSH配置
-            if "pve_host" in config:
-                self._pve_host = str(config["pve_host"])
-            if "ssh_port" in config:
-                self._ssh_port = int(config["ssh_port"])
-            if "ssh_username" in config:
-                self._ssh_username = str(config["ssh_username"])
-            if "ssh_password" in config:
-                self._ssh_password = str(config["ssh_password"])
-            if "ssh_key_file" in config:
-                self._ssh_key_file = str(config["ssh_key_file"])
-            
-            # 备份配置
-            if "storage_name" in config:
-                self._storage_name = str(config["storage_name"])
-            if "enable_local_backup" in config:
-                self._enable_local_backup = bool(config["enable_local_backup"])
-            if "backup_mode" in config:
-                self._backup_mode = str(config["backup_mode"])
-            if "compress_mode" in config:
-                self._compress_mode = str(config["compress_mode"])
-            if "backup_vmid" in config:
-                self._backup_vmid = str(config["backup_vmid"])
-            if "auto_delete_after_download" in config:
-                self._auto_delete_after_download = bool(config["auto_delete_after_download"])
-            if "download_all_backups" in config:
-                self._download_all_backups = bool(config["download_all_backups"])
-            
-            if "backup_path" in config:
-                configured_backup_path = str(config["backup_path"]).strip()
-                if not configured_backup_path:
-                    self._backup_path = str(self.get_data_path() / "actual_backups")
-                    logger.info(f"{self.plugin_name} 备份文件存储路径未配置，使用默认: {self._backup_path}")
-                else:
-                    self._backup_path = configured_backup_path
-            if "keep_backup_num" in config:
-                self._keep_backup_num = int(config["keep_backup_num"])
-            
-            # WebDAV配置
-            if "enable_webdav" in config:
-                self._enable_webdav = bool(config["enable_webdav"])
-            if "webdav_url" in config:
-                self._webdav_url = str(config["webdav_url"])
-            if "webdav_username" in config:
-                self._webdav_username = str(config["webdav_username"])
-            if "webdav_password" in config:
-                self._webdav_password = str(config["webdav_password"])
-            if "webdav_path" in config:
-                self._webdav_path = str(config["webdav_path"])
-            if "webdav_keep_backup_num" in config:
-                self._webdav_keep_backup_num = int(config["webdav_keep_backup_num"])
-            if "clear_history" in config:
-                self._clear_history = bool(config["clear_history"])
-            
-            # 恢复配置
-            if "enable_restore" in config:
-                self._enable_restore = bool(config["enable_restore"])
-            if "restore_storage" in config:
-                self._restore_storage = str(config["restore_storage"])
-            if "restore_vmid" in config:
-                self._restore_vmid = str(config["restore_vmid"])
-            if "restore_force" in config:
-                self._restore_force = bool(config["restore_force"])
-            if "restore_skip_existing" in config:
-                self._restore_skip_existing = bool(config["restore_skip_existing"])
-            if "restore_file" in config:
-                self._restore_file = str(config["restore_file"])
-            if "restore_now" in config:
-                self._restore_now = bool(config["restore_now"])
-            
+            for k, v in config.items():
+                if k == "cron":
+                    self._cron = str(v)
+                if hasattr(self, f"_{k}"):
+                    setattr(self, f"_{k}", v)
             self.__update_config()
 
-            # 处理清理历史记录请求
+        # 处理清理历史/立即恢复
             if self._clear_history:
                 self._clear_all_history()
                 self._clear_history = False
                 self.__update_config()
-
-            # 处理立即恢复请求
             if self._restore_now and self._restore_file:
                 try:
                     source, filename = self._restore_file.split('|', 1)
-                    # 在新线程中运行恢复任务，避免阻塞
                     threading.Thread(target=self.run_restore_job, args=(filename, source)).start()
                     logger.info(f"{self.plugin_name} 已触发恢复任务，文件: {filename}")
                 except Exception as e:
                     logger.error(f"{self.plugin_name} 触发恢复任务失败: {e}")
                 finally:
-                    # 重置开关状态
                     self._restore_now = False
                     self._restore_file = ""
                     self.__update_config()
@@ -284,31 +182,57 @@ class ProxmoxVEBackup(_PluginBase):
         except Exception as e:
              logger.error(f"{self.plugin_name} 创建实际备份目录 {self._backup_path} 失败: {e}")
 
-        if self._enabled or self._onlyonce:
-            if self._onlyonce:
-                try:
-                    # 创建新的调度器
-                    self._scheduler = BackgroundScheduler(timezone=settings.TZ)
-                    job_name = f"{self.plugin_name}服务_onlyonce"
-                    
-                    # 移除同名任务(如果存在)
-                    if self._scheduler.get_job(job_name):
-                        self._scheduler.remove_job(job_name)
-                        
-                    logger.info(f"{self.plugin_name} 服务启动，立即运行一次")
-                    self._scheduler.add_job(func=self.run_backup_job, trigger='date',
-                                         run_date=datetime.now(tz=pytz.timezone(settings.TZ)) + timedelta(seconds=3),
-                                         name=job_name, id=job_name)
-                    self._onlyonce = False
-                    self.__update_config()
-                    
-                    # 启动调度器
-                    if not self._scheduler.running:
-                        self._scheduler.start()
-                except Exception as e:
-                    logger.error(f"启动一次性 {self.plugin_name} 任务失败: {str(e)}")
+        ProxmoxVEBackup._instance = self
 
-        ProxmoxVEBackup._instance = self  # 注册单例
+        # 定时任务调度逻辑
+        if self._scheduler:
+            try:
+                self._scheduler.remove_all_jobs()
+                if self._scheduler.running:
+                    self._scheduler.shutdown(wait=True)
+            except Exception as e:
+                logger.error(f"{self.plugin_name} 停止调度器时出错: {str(e)}")
+            self._scheduler = None
+
+        if self._enabled or self._onlyonce:
+            from apscheduler.schedulers.background import BackgroundScheduler
+            from apscheduler.triggers.cron import CronTrigger
+            self._scheduler = BackgroundScheduler(timezone=settings.TZ)
+            if self._onlyonce:
+                job_name = f"{self.plugin_name}服务_onlyonce"
+                if self._scheduler.get_job(job_name):
+                    self._scheduler.remove_job(job_name)
+                logger.info(f"{self.plugin_name} 服务启动，立即运行一次")
+                self._scheduler.add_job(func=self.run_backup_job, trigger='date',
+                                     run_date=datetime.now(tz=pytz.timezone(settings.TZ)) + timedelta(seconds=3),
+                                     name=job_name, id=job_name)
+                self._onlyonce = False
+                self.__update_config()
+            elif self._cron and self._cron.count(' ') == 4:
+                job_name = f"{self.plugin_name}定时服务"
+                if self._scheduler.get_job(job_name):
+                    self._scheduler.remove_job(job_name)
+                try:
+                    trigger = CronTrigger.from_crontab(self._cron, timezone=settings.TZ)
+                    self._scheduler.add_job(func=self.run_backup_job, trigger=trigger, name=job_name, id=job_name)
+                    logger.info(f"{self.plugin_name} 已注册定时任务: {self._cron}")
+                except Exception as e:
+                    logger.error(f"{self.plugin_name} cron表达式格式错误: {self._cron}, 错误: {e}")
+            if not self._scheduler.running:
+                self._scheduler.start()
+
+    def stop_service(self):
+        try:
+            if self._scheduler:
+                try:
+                    self._scheduler.remove_all_jobs()
+                    if self._scheduler.running:
+                        self._scheduler.shutdown(wait=True)
+                    self._scheduler = None
+                except Exception as e:
+                    logger.error(f"{self.plugin_name} 停止调度器时出错: {str(e)}")
+        except Exception as e:
+            logger.error(f"{self.plugin_name} 停止调度器时出错: {str(e)}")
 
     def _should_skip_reinit(self, config: Optional[dict] = None) -> bool:
         """
@@ -317,25 +241,21 @@ class ProxmoxVEBackup(_PluginBase):
         """
         if not config:
             return False
-            
         # 检查特殊操作标志（这些操作需要立即执行）
         special_operations = {'clear_history', 'restore_now'}
         for op in special_operations:
             if op in config and config[op]:
                 logger.debug(f"{self.plugin_name} 检测到特殊操作: {op}，需要重新初始化")
                 return False
-            
         # 计算当前配置的哈希值
         current_config_hash = self._calculate_config_hash(config)
-        
-        # 如果哈希值相同，说明配置没有实质性变更
+        # 只有哈希完全一致才跳过，否则都重载
         if self._last_config_hash == current_config_hash:
             logger.debug(f"{self.plugin_name} 配置哈希未变更，跳过重新初始化 (哈希: {current_config_hash[:8]}...)")
             return True
-            
         # 更新哈希值
-        self._last_config_hash = current_config_hash
         logger.debug(f"{self.plugin_name} 配置哈希已变更，需要重新初始化 (旧哈希: {self._last_config_hash[:8] if self._last_config_hash else 'None'}... -> 新哈希: {current_config_hash[:8]}...)")
+        self._last_config_hash = current_config_hash
         return False
 
     def _calculate_config_hash(self, config: dict) -> str:
@@ -343,31 +263,26 @@ class ProxmoxVEBackup(_PluginBase):
         计算配置的哈希值，用于检测配置变更
         """
         try:
-            # 只考虑影响服务行为的关键配置项
+            # 全量纳入所有前端可配置项，确保每次保存都能生效
             critical_config = {}
             critical_keys = {
-                'enabled', 'cron', 'onlyonce', 'notify', 'retry_count', 'retry_interval',
+                'enabled', 'notify', 'onlyonce', 'retry_count', 'retry_interval', 'notification_message_type',
                 'pve_host', 'ssh_port', 'ssh_username', 'ssh_password', 'ssh_key_file',
-                'storage_name', 'backup_vmid', 'enable_local_backup', 'backup_path',
-                'keep_backup_num', 'backup_mode', 'compress_mode',
-                'enable_webdav', 'webdav_url', 'webdav_username', 'webdav_password',
-                'webdav_path', 'webdav_keep_backup_num',
-                'enable_restore', 'restore_storage', 'restore_vmid', 'restore_force',
-                'restore_skip_existing', 'restore_file', 'restore_now'
+                'enable_local_backup', 'backup_path', 'keep_backup_num',
+                'enable_webdav', 'webdav_url', 'webdav_username', 'webdav_password', 'webdav_path', 'webdav_keep_backup_num',
+                'storage_name', 'backup_vmid', 'backup_mode', 'compress_mode', 'auto_delete_after_download', 'download_all_backups',
+                'enable_restore', 'restore_force', 'restore_skip_existing', 'restore_storage', 'restore_vmid', 'restore_now', 'restore_file',
+                'clear_history'
+                , 'cron'
             }
-            
             for key in critical_keys:
                 if key in config:
                     critical_config[key] = config[key]
-            
-            # 将配置转换为JSON字符串并计算哈希
             import json
             config_str = json.dumps(critical_config, sort_keys=True, ensure_ascii=False)
             return hashlib.md5(config_str.encode('utf-8')).hexdigest()
-            
         except Exception as e:
             logger.error(f"{self.plugin_name} 计算配置哈希失败: {e}")
-            # 如果计算失败，返回一个固定值，确保不会跳过初始化
             return "error_hash"
 
     def __update_config(self):
@@ -427,15 +342,136 @@ class ProxmoxVEBackup(_PluginBase):
     def get_command(self) -> List[Dict[str, Any]]:
         return []
 
-    def get_api(self) -> List[Dict[str, Any]]:
-        """添加恢复API接口"""
+    def get_api(self) -> list:
+        """
+        API注册
+        """
         return [
             {
-                "path": "/restore",
-                "endpoint": api_restore_backup,  # 直接引用本地函数对象
+                "path": "/config",
+                "endpoint": self._get_config,
+                "methods": ["GET"],
+                "auth": "bear",
+                "summary": "获取插件配置"
+            },
+            {
+                "path": "/config",
+                "endpoint": self._save_config,
                 "methods": ["POST"],
-                "description": "执行恢复操作"
-            }
+                "auth": "bear",
+                "summary": "保存插件配置"
+            },
+            {
+                "path": "/status",
+                "endpoint": self._get_status,
+                "methods": ["GET"],
+                "auth": "bear",
+                "summary": "获取插件运行状态"
+            },
+            {
+                "path": "/backup_history",
+                "endpoint": self._get_backup_history,
+                "methods": ["GET"],
+                "auth": "bear",
+                "summary": "获取备份历史记录"
+            },
+            {
+                "path": "/restore_history",
+                "endpoint": self._get_restore_history,
+                "methods": ["GET"],
+                "auth": "bear",
+                "summary": "获取恢复历史记录"
+            },
+            {
+                "path": "/dashboard_data",
+                "endpoint": self._get_dashboard_data,
+                "methods": ["GET"],
+                "auth": "bear",
+                "summary": "获取仪表板数据"
+            },
+            {
+                "path": "/run_backup",
+                "endpoint": self._run_backup,
+                "methods": ["POST"],
+                "auth": "bear",
+                "summary": "手动启动备份任务"
+            },
+            {
+                "path": "/clear_history",
+                "endpoint": self._clear_history_api,
+                "methods": ["POST"],
+                "auth": "bear",
+                "summary": "清理备份和恢复历史"
+            },
+            {
+                "path": "/pve_status",
+                "endpoint": self._get_pve_status_api,
+                "methods": ["GET"],
+                "auth": "bear",
+                "summary": "获取PVE主机状态"
+            },
+            {
+                "path": "/container_status",
+                "endpoint": self._get_container_status_api,
+                "methods": ["GET"],
+                "auth": "bear",
+                "summary": "获取所有LXC容器状态"
+            },
+            {
+                "path": "/available_backups",
+                "endpoint": self._get_available_backups_api,
+                "methods": ["GET"],
+                "auth": "bear",
+                "summary": "获取可用备份文件列表"
+            },
+            {
+                "path": "/delete_backup",
+                "endpoint": self._delete_backup_api,
+                "methods": ["POST"],
+                "auth": "bear",
+                "summary": "删除备份文件"
+            },
+            {
+                "path": "/restore",
+                "endpoint": self._restore_backup_api,
+                "methods": ["POST"],
+                "auth": "bear",
+                "summary": "恢复备份文件"
+            },
+            {
+                "path": "/download_backup",
+                "endpoint": self._download_backup_api,
+                "methods": ["GET"],
+                "summary": "下载本地备份文件"
+            },
+            {
+                "path": "/token",
+                "endpoint": self._get_token,
+                "methods": ["GET"],
+                "auth": "bear",
+                "summary": "获取API令牌"
+            },
+            {
+                "path": "/container_action",
+                "endpoint": self._container_action_api,
+                "methods": ["POST"],
+                "auth": "bear",
+                "summary": "对指定虚拟机/容器执行操作"
+            },
+            {
+                "path": "/container_snapshot",
+                "endpoint": self._container_snapshot_api,
+                "methods": ["POST"],
+                "auth": "bear",
+                "summary": "对指定虚拟机/容器创建快照"
+            },
+            {
+                "path": "/host_action",
+                "endpoint": self._host_action_api,
+                "methods": ["POST"],
+                "auth": "bear",
+                "summary": "对PVE主机执行重启或关机"
+            },
         ]
 
     @classmethod
@@ -443,941 +479,19 @@ class ProxmoxVEBackup(_PluginBase):
         return cls._instance
 
     def get_service(self) -> List[Dict[str, Any]]:
-        if self._enabled and self._cron:
-            try:
-                if str(self._cron).strip().count(" ") == 4:
-                    return [{
-                        "id": "ProxmoxVEBackupService",
-                        "name": f"{self.plugin_name}定时服务",
-                        "trigger": CronTrigger.from_crontab(self._cron, timezone=settings.TZ),
-                        "func": self.run_backup_job,
-                        "kwargs": {}
-                    }]
-                else:
-                    logger.error(f"{self.plugin_name} cron表达式格式错误: {self._cron}")
-                    return []
-            except Exception as err:
-                logger.error(f"{self.plugin_name} 定时任务配置错误：{str(err)}")
-                return []
         return []
 
-    def get_form(self) -> Tuple[List[dict], Dict[str, Any]]:
-        # 获取当前保存的配置
-        current_config = self.get_config()
-        if current_config is None:
-            current_config = {}
+    def get_form(self):
+        """
+        Vue模式下，返回None和当前配置，所有UI交给前端Vue组件
+        """
+        return None, self.get_config() or {}
 
-        # 动态生成消息类型选项
-        MsgTypeOptions = []
-        for item in NotificationType:
-            MsgTypeOptions.append({
-                "title": item.value,
-                "value": item.name
-            })
-
-        # 定义基础设置内容
-        basic_settings = [
-            {
-                'component': 'VCardTitle',
-                'props': {'class': 'text-h6'},
-                'text': '⚙️ 基础设置'
-            },
-            {
-                'component': 'VCardText',
-                'content': [
-                    # 开关行
-                    {
-                        'component': 'VRow',
-                        'content': [
-                            {'component': 'VCol', 'props': {'cols': 3}, 'content': [{'component': 'VSwitch', 'props': {'model': 'enabled', 'label': '启用插件', 'color': 'primary', 'prepend-icon': 'mdi-power'}}]},
-                            {'component': 'VCol', 'props': {'cols': 3}, 'content': [{'component': 'VSwitch', 'props': {'model': 'notify', 'label': '发送通知', 'color': 'info', 'prepend-icon': 'mdi-bell'}}]},
-                            {'component': 'VCol', 'props': {'cols': 3}, 'content': [{'component': 'VSwitch', 'props': {'model': 'onlyonce', 'label': '立即运行一次', 'color': 'success', 'prepend-icon': 'mdi-play'}}]},
-                            {'component': 'VCol', 'props': {'cols': 3}, 'content': [{'component': 'VSwitch', 'props': {'model': 'clear_history', 'label': '清理历史记录', 'color': 'warning', 'prepend-icon': 'mdi-delete-sweep'}}]},
-                        ],
-                    },
-                    # 4个一排：失败重试次数、重试间隔、执行周期、消息类型
-                    {
-                        'component': 'VRow',
-                        'content': [
-                            {'component': 'VCol', 'props': {'cols': 3}, 'content': [
-                                {'component': 'VTextField', 'props': {
-                                    'model': 'retry_count',
-                                    'label': '失败重试次数',
-                                    'type': 'number',
-                                    'placeholder': '默认为0(不重试)',
-                                    'hint': '建议设置为0',
-                                    'persistent-hint': True,
-                                    'prepend-inner-icon': 'mdi-refresh'
-                                }}
-                            ]},
-                            {'component': 'VCol', 'props': {'cols': 3}, 'content': [
-                                {'component': 'VTextField', 'props': {
-                                    'model': 'retry_interval',
-                                    'label': '重试间隔(秒)',
-                                    'type': 'number',
-                                    'placeholder': '默认为60秒',
-                                    'prepend-inner-icon': 'mdi-timer'
-                                }}
-                            ]},
-                            {'component': 'VCol', 'props': {'cols': 3}, 'content': [
-                                {'component': 'VCronField', 'props': {
-                                    'model': 'cron',
-                                    'label': '执行周期',
-                                    'prepend-inner-icon': 'mdi-clock-outline'
-                                }}
-                            ]},
-                            {'component': 'VCol', 'props': {'cols': 3}, 'content': [
-                                {'component': 'VSelect', 'props': {
-                                    'model': 'notification_message_type',
-                                    'label': '消息类型',
-                                    'items': MsgTypeOptions,
-                                    'prepend-inner-icon': 'mdi-message-alert'
-                                }}
-                            ]},
-                        ]
-                    },
-                ]
-            }
-        ]
-        
-        # 定义选项卡内容
-        tabs = {
-            'connection': {
-                'icon': 'mdi-connection', 'title': '连接设置', 'content': [
-                    # PVE连接设置
-                    {
-                        'component': 'VCard',
-                        'props': {'variant': 'outlined', 'class': 'mb-4'},
-                        'content': [
-                            {
-                                'component': 'VCardTitle',
-                                'props': {'class': 'text-h6'},
-                                'text': '🔌 PVE主机'
-                            },
-                            {
-                                'component': 'VCardText',
-                                'content': [
-                                    {
-                                        'component': 'VRow',
-                                        'content': [
-                                            {'component': 'VCol', 'props': {'cols': 12, 'md': 6}, 'content': [
-                                                {'component': 'VTextField', 'props': {
-                                                    'model': 'pve_host',
-                                                    'label': 'PVE主机地址',
-                                                    'placeholder': '例如: 192.168.1.100',
-                                                    'prepend-inner-icon': 'mdi-server'
-                                                }}
-                                            ]},
-                                            {'component': 'VCol', 'props': {'cols': 12, 'md': 6}, 'content': [
-                                                {'component': 'VTextField', 'props': {
-                                                    'model': 'ssh_port',
-                                                    'label': 'SSH端口',
-                                                    'type': 'number',
-                                                    'placeholder': '默认为22',
-                                                    'prepend-inner-icon': 'mdi-numeric'
-                                                }}
-                                            ]},
-                                        ]
-                                    },
-                                    {
-                                        'component': 'VRow',
-                                        'content': [
-                                            {'component': 'VCol', 'props': {'cols': 12, 'md': 6}, 'content': [
-                                                {'component': 'VTextField', 'props': {
-                                                    'model': 'ssh_username',
-                                                    'label': 'SSH用户名',
-                                                    'placeholder': '默认为root',
-                                                    'persistent-hint': True,
-                                                    'hint': '通常使用root用户以确保有足够权限',
-                                                    'prepend-inner-icon': 'mdi-account'
-                                                }}
-                                            ]},
-                                            {'component': 'VCol', 'props': {'cols': 12, 'md': 6}, 'content': [
-                                                {'component': 'VTextField', 'props': {
-                                                    'model': 'ssh_password',
-                                                    'label': 'SSH密码',
-                                                    'type': 'password',
-                                                    'placeholder': '如使用密钥认证可留空',
-                                                    'prepend-inner-icon': 'mdi-key'
-                                                }}
-                                            ]},
-                                        ]
-                                    },
-                                    {
-                                        'component': 'VRow',
-                                        'content': [
-                                            {'component': 'VCol', 'props': {'cols': 12}, 'content': [
-                                                {'component': 'VTextField', 'props': {
-                                                    'model': 'ssh_key_file',
-                                                    'label': 'SSH私钥文件路径',
-                                                    'placeholder': '如使用密码认证可留空',
-                                                    'prepend-inner-icon': 'mdi-file-key'
-                                                }}
-                                            ]},
-                                        ]
-                                    }
-                                ]
-                            }
-                        ]
-                    }
-                ]
-            },
-            'storage': {
-                'icon': 'mdi-database-outline', 'title': '存储设置', 'content': [
-                    # 本地备份设置卡片
-                    {
-                        'component': 'VCard',
-                        'props': {'variant': 'outlined', 'class': 'mb-4'},
-                        'content': [
-                            {
-                                'component': 'VCardTitle',
-                                'props': {'class': 'text-h6'},
-                                'text': '💾 本地备份设置'
-                            },
-                            {
-                                'component': 'VCardText',
-                                'content': [
-                                    {
-                                        'component': 'VRow',
-                                        'content': [
-                                            {'component': 'VCol', 'props': {'cols': 12, 'md': 4}, 'content': [{'component': 'VSwitch', 'props': {'model': 'enable_local_backup', 'label': '启用本地备份', 'color': 'primary', 'prepend-icon': 'mdi-folder'}}]},
-                                        ],
-                                    },
-                                    {
-                                        'component': 'VRow',
-                                        'content': [
-                                            {'component': 'VCol', 'props': {'cols': 12, 'md': 8}, 'content': [{'component': 'VTextField', 'props': {'model': 'backup_path', 'label': '备份文件存储路径', 'placeholder': '留空则使用默认路径', 'prepend-inner-icon': 'mdi-folder-open'}}]},
-                                            {'component': 'VCol', 'props': {'cols': 12, 'md': 4}, 'content': [{'component': 'VTextField', 'props': {'model': 'keep_backup_num', 'label': '本地备份保留数量', 'type': 'number', 'placeholder': '例如: 7', 'prepend-inner-icon': 'mdi-counter'}}]},
-                                        ],
-                                    },
-                                ]
-                            }
-                        ]
-                    },
-                    # WebDAV远程备份设置卡片
-                    {
-                        'component': 'VCard',
-                        'props': {'variant': 'outlined', 'class': 'mb-4'},
-                        'content': [
-                            {
-                                'component': 'VCardTitle',
-                                'props': {'class': 'text-h6'},
-                                'text': '☁️ WebDAV远程备份设置'
-                            },
-                            {
-                                'component': 'VCardText',
-                                'content': [
-                                    {
-                                        'component': 'VRow',
-                                        'content': [
-                                            {'component': 'VCol', 'props': {'cols': 12, 'md': 4}, 'content': [{'component': 'VSwitch', 'props': {'model': 'enable_webdav', 'label': '启用WebDAV备份', 'color': 'primary', 'prepend-icon': 'mdi-cloud-upload'}}]},
-                                        ],
-                                    },
-                                    {
-                                        'component': 'VRow',
-                                        'content': [
-                                            {'component': 'VCol', 'props': {'cols': 12, 'md': 12}, 'content': [{'component': 'VTextField', 'props': {'model': 'webdav_url', 'label': 'WebDAV服务器地址', 'placeholder': '例如: https://dav.jianguoyun.com/dav/', 'prepend-inner-icon': 'mdi-cloud'}}]},
-                                        ],
-                                    },
-                                    {
-                                        'component': 'VRow',
-                                        'content': [
-                                            {'component': 'VCol', 'props': {'cols': 12, 'md': 6}, 'content': [{'component': 'VTextField', 'props': {'model': 'webdav_username', 'label': 'WebDAV用户名', 'placeholder': '请输入用户名', 'prepend-inner-icon': 'mdi-account'}}]},
-                                            {'component': 'VCol', 'props': {'cols': 12, 'md': 6}, 'content': [{'component': 'VTextField', 'props': {'model': 'webdav_password', 'label': 'WebDAV密码', 'type': 'password', 'placeholder': '请输入密码', 'prepend-inner-icon': 'mdi-lock'}}]},
-                                        ],
-                                    },
-                                    {
-                                        'component': 'VRow',
-                                        'content': [
-                                            {'component': 'VCol', 'props': {'cols': 12, 'md': 8}, 'content': [{'component': 'VTextField', 'props': {'model': 'webdav_path', 'label': 'WebDAV备份路径', 'placeholder': '例如: /backups/proxmox', 'prepend-inner-icon': 'mdi-folder-network'}}]},
-                                            {'component': 'VCol', 'props': {'cols': 12, 'md': 4}, 'content': [{'component': 'VTextField', 'props': {'model': 'webdav_keep_backup_num', 'label': 'WebDAV备份保留数量', 'type': 'number', 'placeholder': '例如: 7', 'prepend-inner-icon': 'mdi-counter'}}]},
-                                        ],
-                                    },
-                                ]
-                            }
-                        ]
-                    }
-                ]
-            },
-            'task': {
-                'icon': 'mdi-clipboard-list-outline', 'title': '备份设置', 'content': [
-                    # 备份任务配置卡片
-                    {
-                        'component': 'VCard',
-                        'props': {'variant': 'outlined', 'class': 'mb-4'},
-                        'content': [
-                            {'component': 'VCardTitle', 'props': {'class': 'text-h6'}, 'text': '📋 备份任务配置'},
-                            {'component': 'VCardText', 'content': [
-                                {
-                                    'component': 'VRow',
-                                    'content': [
-                                        {'component': 'VCol', 'props': {'cols': 12, 'md': 6}, 'content': [
-                                            {'component': 'VTextField', 'props': {
-                                                'model': 'storage_name',
-                                                'label': '存储名称',
-                                                'placeholder': '如 local、PVE，默认为 local',
-                                                'prepend-inner-icon': 'mdi-database'
-                                            }}
-                                        ]},
-                                        {'component': 'VCol', 'props': {'cols': 12, 'md': 6}, 'content': [
-                                            {'component': 'VTextField', 'props': {
-                                                'model': 'backup_vmid',
-                                                'label': '要备份的容器ID',
-                                                'placeholder': '多个ID用英文逗号分隔，如102,103，留空则备份全部',
-                                                'prepend-inner-icon': 'mdi-numeric'
-                                            }}
-                                        ]},
-                                    ]
-                                },
-                                {
-                                    'component': 'VRow',
-                                    'content': [
-                                        {'component': 'VCol', 'props': {'cols': 12, 'md': 6}, 'content': [
-                                            {'component': 'VSelect', 'props': {
-                                                'model': 'backup_mode',
-                                                'label': '备份模式',
-                                                'items': [
-                                                    {'title': '快照（推荐，支持快照卷）', 'value': 'snapshot'},
-                                                    {'title': '挂起（suspend挂起）', 'value': 'suspend'},
-                                                    {'title': '关机（stop关机）', 'value': 'stop'},
-                                                ],
-                                                'prepend-inner-icon': 'mdi-camera-timer'
-                                            }}
-                                        ]},
-                                        {'component': 'VCol', 'props': {'cols': 12, 'md': 6}, 'content': [
-                                            {'component': 'VSelect', 'props': {
-                                                'model': 'compress_mode',
-                                                'label': '压缩模式',
-                                                'items': [
-                                                    {'title': 'ZSTD（又快又好）', 'value': 'zstd'},
-                                                    {'title': 'GZIP（兼容性好）', 'value': 'gzip'},
-                                                    {'title': 'LZO（速度快）', 'value': 'lzo'},
-                                                ],
-                                                'prepend-inner-icon': 'mdi-zip-box'
-                                            }}
-                                        ]},
-                                    ]
-                                },
-                                {
-                                    'component': 'VRow',
-                                    'content': [
-                                        {'component': 'VCol', 'props': {'cols': 12, 'md': 6}, 'content': [
-                                            {'component': 'VSwitch', 'props': {'model': 'auto_delete_after_download', 'label': '下载后自动删除PVE备份', 'color': 'error', 'prepend-icon': 'mdi-delete-forever'}},
-                                        ]},
-                                        {'component': 'VCol', 'props': {'cols': 12, 'md': 6}, 'content': [
-                                            {'component': 'VSwitch', 'props': {'model': 'download_all_backups', 'label': '下载所有备份文件（多VM时）', 'color': 'info', 'prepend-icon': 'mdi-download-multiple'}},
-                                        ]},
-                                    ],
-                                }
-                            ]}
-                        ]
-                    }
-                ]
-            },
-            'restore': {
-                'icon': 'mdi-restore', 'title': '恢复设置', 'content': [
-                    # 恢复功能设置卡片
-                    {
-                        'component': 'VCard',
-                        'props': {'variant': 'outlined', 'class': 'mb-4'},
-                        'content': [
-                            {
-                                'component': 'VCardTitle',
-                                'props': {'class': 'text-h6'},
-                                'text': '🔄 恢复功能设置'
-                            },
-                            {
-                                'component': 'VCardText',
-                                'content': [
-                                    {
-                                        'component': 'VRow',
-                                        'content': [
-                                            {'component': 'VCol', 'props': {'cols': 12, 'md': 4}, 'content': [{'component': 'VSwitch', 'props': {'model': 'enable_restore', 'label': '启用恢复功能', 'color': 'primary', 'prepend-icon': 'mdi-restore'}}]},
-                                            {'component': 'VCol', 'props': {'cols': 12, 'md': 4}, 'content': [{'component': 'VSwitch', 'props': {'model': 'restore_force', 'label': '强制恢复（覆盖现有VM）', 'color': 'error', 'prepend-icon': 'mdi-alert-circle'}}]},
-                                            {'component': 'VCol', 'props': {'cols': 12, 'md': 4}, 'content': [{'component': 'VSwitch', 'props': {'model': 'restore_skip_existing', 'label': '跳过已存在的VM', 'color': 'warning', 'prepend-icon': 'mdi-skip-next'}}]},
-                                        ],
-                                },
-                                {
-                                    'component': 'VRow',
-                                    'content': [
-                                        {'component': 'VCol', 'props': {'cols': 12, 'md': 6}, 'content': [
-                                                {'component': 'VTextField', 'props': {
-                                                    'model': 'restore_storage',
-                                                    'label': '恢复存储名称',
-                                                    'placeholder': '如 local、PVE，默认为 local',
-                                                    'prepend-inner-icon': 'mdi-database'
-                                                }}
-                                        ]},
-                                        {'component': 'VCol', 'props': {'cols': 12, 'md': 6}, 'content': [
-                                                {'component': 'VTextField', 'props': {
-                                                    'model': 'restore_vmid',
-                                                    'label': '恢复目标VMID',
-                                                    'placeholder': '留空则使用备份文件中的原始VMID',
-                                                    'prepend-inner-icon': 'mdi-numeric'
-                                                }}
-                                            ]},
-                                        ]
-                                    },
-                                    {
-                                        'component': 'VRow',
-                                        'content': [
-                                            {'component': 'VCol', 'props': {'cols': 12, 'md': 8}, 'content': [
-                                                {'component': 'VSelect', 'props': {
-                                                    'model': 'restore_file',
-                                                    'label': '选择要恢复的备份文件',
-                                                    'items': [
-                                                        {'title': f"{backup['filename']} ({backup['source']})", 'value': f"{backup['source']}|{backup['filename']}"}
-                                                        for backup in self._get_available_backups()
-                                                    ],
-                                                    'placeholder': '请选择一个备份文件',
-                                                    'prepend-inner-icon': 'mdi-file-find'
-                                                }}
-                                            ]},
-                                            {'component': 'VCol', 'props': {'cols': 12, 'md': 4}, 'content': [
-                                                {'component': 'VSwitch', 'props': {'model': 'restore_now', 'label': '立即恢复', 'color': 'success', 'prepend-icon': 'mdi-play-circle'}}
-                                            ]},
-                                        ]
-                                    }
-                                ]
-                            }
-                        ]
-                    },
-                    # 恢复功能说明卡片
-                    {
-                        'component': 'VCard',
-                        'props': {'variant': 'outlined', 'class': 'mb-4'},
-                        'content': [
-                            {
-                                'component': 'VCardTitle',
-                                'props': {'class': 'text-h6'},
-                                'text': '📋 恢复功能说明'
-                            },
-                            {
-                                'component': 'VCardText',
-                                'content': [
-                                    {
-                                        'component': 'VAlert',
-                                        'props': {
-                                            'type': 'info',
-                                            'variant': 'tonal',
-                                            'class': 'mb-2'
-                                        },
-                                        'content': [
-                                            {'component': 'VListItem', 'props': {'prepend-icon': 'mdi-information-outline'}, 'content': [{'component': 'VListItemTitle', 'text': '【恢复功能】'}]},
-                                            {'component': 'VListItem', 'props': {'density': 'compact'}, 'content': [{'component': 'VListItemSubtitle', 'text': '• 支持从本地备份文件恢复虚拟机'}]},
-                                            {'component': 'VListItem', 'props': {'density': 'compact'}, 'content': [{'component': 'VListItemSubtitle', 'text': '• 支持从WebDAV备份文件恢复虚拟机'}]},
-                                            {'component': 'VListItem', 'props': {'density': 'compact'}, 'content': [{'component': 'VListItemSubtitle', 'text': '• 可在插件页面选择备份文件进行恢复'}]},
-                                            {'component': 'VListItem', 'props': {'density': 'compact'}, 'content': [{'component': 'VListItemSubtitle', 'text': '• 支持强制恢复覆盖现有虚拟机'}]},
-                                        ]
-                                    },
-                                    {
-                                        'component': 'VAlert',
-                                        'props': {
-                                            'type': 'warning',
-                                            'variant': 'tonal',
-                                            'class': 'mb-2'
-                                        },
-                                        'content': [
-                                            {'component': 'VListItem', 'props': {'prepend-icon': 'mdi-alert-circle-outline'}, 'content': [{'component': 'VListItemTitle', 'text': '【恢复注意事项】'}]},
-                                            {'component': 'VListItem', 'props': {'density': 'compact'}, 'content': [{'component': 'VListItemSubtitle', 'text': '• 恢复操作会停止目标虚拟机（如果正在运行）'}]},
-                                            {'component': 'VListItem', 'props': {'density': 'compact'}, 'content': [{'component': 'VListItemSubtitle', 'text': '• 强制恢复会删除现有的同名虚拟机'}]},
-                                            {'component': 'VListItem', 'props': {'density': 'compact'}, 'content': [{'component': 'VListItemSubtitle', 'text': '• 建议在恢复前手动备份重要数据'}]},
-                                            {'component': 'VListItem', 'props': {'density': 'compact'}, 'content': [{'component': 'VListItemSubtitle', 'text': '• 恢复过程可能需要较长时间，请耐心等待'}]},
-                                        ]
-                                    }
-                                ]
-                            }
-                        ]
-                    }
-                ]
-            },
-            'readme': {
-                'icon': 'mdi-book-open-variant', 'title': '使用说明', 'content': [
-                    # 使用说明卡片
-                    {
-                        'component': 'VCard',
-                        'props': {'variant': 'outlined', 'class': 'mb-4'},
-                        'content': [
-                            {
-                                'component': 'VCardTitle',
-                                'props': {'class': 'text-h6'},
-                                'text': '📖 插件使用说明'
-                            },
-                            {
-                                'component': 'VCardText',
-                                'content': [
-                                    {
-                                        'component': 'VAlert',
-                                        'props': {
-                                            'type': 'info',
-                                            'variant': 'tonal',
-                                            'class': 'mb-2'
-                                        },
-                                        'content': [
-                                            {'component': 'VListItem', 'props': {'prepend-icon': 'mdi-star-circle-outline'}, 'content': [{'component': 'VListItemTitle', 'text': '【基础使用说明】'}]},
-                                            {'component': 'VListItem', 'props': {'density': 'compact'}, 'content': [{'component': 'VListItemSubtitle', 'text': '1. 在 [连接设置] 中，填写PVE主机地址和SSH连接信息。'}]},
-                                            {'component': 'VListItem', 'props': {'density': 'compact'}, 'content': [{'component': 'VListItemSubtitle', 'text': '2. 在 [备份设置] 中，设置要备份的容器ID、备份模式等。'}]},
-                                            {'component': 'VListItem', 'props': {'density': 'compact'}, 'content': [{'component': 'VListItemSubtitle', 'text': '3. 在 [存储设置] 中，配置本地或WebDAV备份参数。'}]},
-                                            {'component': 'VListItem', 'props': {'density': 'compact'}, 'content': [{'component': 'VListItemSubtitle', 'text': '4. 在 [基础设置] 中，设置执行周期、重试策略并启用插件。'}]},
-                                            {'component': 'VListItem', 'props': {'density': 'compact'}, 'content': [{'component': 'VListItemSubtitle', 'text': '5. 点击 [保存] 应用配置。'}]},
-                                        ]
-                                    },
-                                    {
-                                        'component': 'VAlert',
-                                        'props': {
-                                            'type': 'warning',
-                                            'variant': 'tonal',
-                                            'class': 'mb-2',
-                                        },
-                                        'content': [
-                                            {'component': 'VListItem', 'props': {'prepend-icon': 'mdi-alert-circle-outline'}, 'content': [{'component': 'VListItemTitle', 'text': '【注意事项】'}]},
-                                            {'component': 'VListItem', 'props': {'density': 'compact'}, 'content': [{'component': 'VListItemSubtitle', 'text': '- SSH用户需要有在PVE上执行vzdump的权限，建议使用root用户。'}]},
-                                            {'component': 'VListItem', 'props': {'density': 'compact'}, 'content': [{'component': 'VListItemSubtitle', 'text': '- 如使用SSH密钥认证，请确保MoviePilot有权限读取私钥文件。'}]},
-                                            {'component': 'VListItem', 'props': {'density': 'compact'}, 'content': [{'component': 'VListItemSubtitle', 'text': '- 备份文件可能占用较大空间，请确保本地和远程存储空间充足。'}]},
-                                            {'component': 'VListItem', 'props': {'density': 'compact'}, 'content': [{'component': 'VListItemSubtitle', 'text': '- "立即运行一次" 会在点击保存后约3秒执行，请留意日志输出。'}]},
-                                        ]
-                                    }
-                                ]
-                            }
-                        ]
-                    }
-                ]
-            }
-        }
-        return [
-            {
-                'component': 'VForm',
-                'content': [
-                    # 基础设置卡片（独立显示）
-                    {
-                        'component': 'VCard',
-                        'props': {'variant': 'outlined', 'class': 'mb-4'},
-                        'content': basic_settings
-                    },
-                    # 选项卡卡片
-                    {
-                        'component': 'VCard',
-                        'props': {'variant': 'flat'},
-                        'content': [
-                            {
-                                'component': 'VTabs',
-                                'props': {'model': 'tab', 'grow': True},
-                                'content': [
-                                    {'component': 'VTab', 'props': {'value': key, 'prepend-icon': value['icon']}, 'text': value['title']}
-                                    for key, value in tabs.items()
-                                ]
-                            },
-                            {
-                                'component': 'VCardText',
-                                'content': [
-                                    {
-                                        'component': 'VWindow',
-                                        'props': {'model': 'tab'},
-                                        'content': [
-                                            {
-                                                'component': 'VWindowItem',
-                                                'props': {'value': key},
-                                                'content': value['content']
-                                            }
-                                            for key, value in tabs.items()
-                                        ]
-                                    }
-                                ]
-                            }
-                        ]
-                    }
-                ]
-            }
-        ], {
-            "tab": "connection",
-            "enabled": current_config.get("enabled", False),
-            "notify": current_config.get("notify", False),
-            "cron": current_config.get("cron", "0 3 * * *"),
-            "onlyonce": current_config.get("onlyonce", False),
-            "retry_count": current_config.get("retry_count", 0),
-            "retry_interval": current_config.get("retry_interval", 60),
-            "notification_message_type": current_config.get("notification_message_type", "Plugin"),  # 新增
-            
-            # SSH配置
-            "pve_host": current_config.get("pve_host", ""),
-            "ssh_port": current_config.get("ssh_port", 22),
-            "ssh_username": current_config.get("ssh_username", "root"),
-            "ssh_password": current_config.get("ssh_password", ""),
-            "ssh_key_file": current_config.get("ssh_key_file", ""),
-            
-            # 备份配置
-            "storage_name": current_config.get("storage_name", "local"),
-            "backup_vmid": current_config.get("backup_vmid", ""),
-            "enable_local_backup": current_config.get("enable_local_backup", True),
-            "backup_path": current_config.get("backup_path", ""),
-            "keep_backup_num": current_config.get("keep_backup_num", 7),
-            "backup_mode": current_config.get("backup_mode", "snapshot"),
-            "compress_mode": current_config.get("compress_mode", "zstd"),
-            "auto_delete_after_download": current_config.get("auto_delete_after_download", False),
-            "download_all_backups": current_config.get("download_all_backups", False),
-            
-            # WebDAV配置
-            "enable_webdav": current_config.get("enable_webdav", False),
-            "webdav_url": current_config.get("webdav_url", ""),
-            "webdav_username": current_config.get("webdav_username", ""),
-            "webdav_password": current_config.get("webdav_password", ""),
-            "webdav_path": current_config.get("webdav_path", ""),
-            "webdav_keep_backup_num": current_config.get("webdav_keep_backup_num", 7),
-            "clear_history": current_config.get("clear_history", False),
-            
-            # 恢复配置
-            "enable_restore": current_config.get("enable_restore", False),
-            "restore_storage": current_config.get("restore_storage", "local"),
-            "restore_vmid": current_config.get("restore_vmid", ""),
-            "restore_force": current_config.get("restore_force", False),
-            "restore_skip_existing": current_config.get("restore_skip_existing", True),
-            "restore_file": current_config.get("restore_file", ""),
-            "restore_now": current_config.get("restore_now", False),
-        }
-
-    def get_page(self) -> List[dict]:
-        backup_history_data = self._load_backup_history()
-        restore_history_data = self._load_restore_history()
-        
-        # 合并和排序历史记录
-        all_history = []
-        for item in backup_history_data:
-            item['type'] = '备份'
-            all_history.append(item)
-        for item in restore_history_data:
-            item['type'] = '恢复'
-            all_history.append(item)
-        
-        all_history.sort(key=lambda x: x.get('timestamp', 0), reverse=True)
-        
-        # 获取可用的备份文件
-        available_backups = self._get_available_backups()
-        local_backups_count = sum(1 for b in available_backups if b['source'] == '本地备份')
-        webdav_backups_count = sum(1 for b in available_backups if b['source'] == 'WebDAV备份')
-        
-        # 获取PVE端任务状态
-        pve_backup_status = "未知"
-        pve_restore_status = "未知"
-        pve_running_tasks = []
-        
-        if self._pve_host and self._ssh_username and (self._ssh_password or self._ssh_key_file):
-            try:
-                ssh = paramiko.SSHClient()
-                ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-                
-                if self._ssh_key_file:
-                    private_key = paramiko.RSAKey.from_private_key_file(self._ssh_key_file)
-                    ssh.connect(self._pve_host, port=self._ssh_port, username=self._ssh_username, pkey=private_key)
-                else:
-                    ssh.connect(self._pve_host, port=self._ssh_port, username=self._ssh_username, password=self._ssh_password)
-                
-                # 检查备份任务状态
-                check_backup_cmd = "ps aux | grep vzdump | grep -v grep"
-                stdin, stdout, stderr = ssh.exec_command(check_backup_cmd)
-                running_backups = stdout.read().decode().strip()
-                
-                if running_backups:
-                    pve_backup_status = "运行中"
-                    # 解析运行中的备份任务
-                    for line in running_backups.split('\n'):
-                        if line.strip():
-                            pve_running_tasks.append(line.strip())
-                else:
-                    pve_backup_status = "空闲"
-                
-                # 检查恢复任务状态
-                check_restore_cmd = "ps aux | grep qmrestore | grep -v grep"
-                stdin, stdout, stderr = ssh.exec_command(check_restore_cmd)
-                running_restores = stdout.read().decode().strip()
-                
-                if running_restores:
-                    pve_restore_status = "运行中"
-                    # 解析运行中的恢复任务
-                    for line in running_restores.split('\n'):
-                        if line.strip():
-                            pve_running_tasks.append(line.strip())
-                else:
-                    pve_restore_status = "空闲"
-
-                ssh.close()
-            except Exception as e:
-                pve_backup_status = f"连接失败"
-                pve_restore_status = f"连接失败"
-        
-        page_content = []
-        
-        # 确定显示状态和颜色
-        backup_display_status = self._backup_activity if self._backup_activity != "空闲" else pve_backup_status
-        restore_display_status = self._restore_activity if self._restore_activity != "空闲" else pve_restore_status
-
-        if backup_display_status == "空闲":
-            backup_status_color = "success"
-        elif "失败" in backup_display_status:
-            backup_status_color = "error"
-        else:
-            backup_status_color = "warning"
-
-        if restore_display_status == "空闲":
-            restore_status_color = "success"
-        elif "失败" in restore_display_status:
-            restore_status_color = "error"
-        else:
-            restore_status_color = "warning"
-
-        # PVE状态卡片
-        page_content.append({
-            'component': 'VCard',
-            'props': {'variant': 'outlined', 'class': 'mb-4'},
-            'content': [
-                {
-                    'component': 'VCardTitle',
-                    'props': {'class': 'text-h6'},
-                    'text': '🔍 任务状态'
-                },
-                {
-                    'component': 'VCardText',
-                    'content': [
-                        {
-                            'component': 'VRow',
-                            'props': {'align': 'center', 'no-gutters': True},
-                            'content': [
-                                {'component': 'VCol', 'props': {'cols': 'auto'}, 'content': [
-                                    {'component': 'VChip', 'props': {
-                                        'color': backup_status_color,
-                                        'variant': 'elevated',
-                                        'label': True,
-                                        'prepend_icon': 'mdi-content-save'
-                                    }, 'text': f"备份状态: {backup_display_status}"}
-                                ]},
-                                {'component': 'VCol', 'props': {'cols': 'auto', 'class': 'ml-2'}, 'content': [
-                                    {'component': 'VChip', 'props': {
-                                        'color': restore_status_color,
-                                        'variant': 'elevated',
-                                        'label': True,
-                                        'prepend_icon': 'mdi-restore'
-                                    }, 'text': f"恢复状态: {restore_display_status}"}
-                                ]},
-                                *([{'component': 'VCol', 'props': {'cols': 'auto', 'class': 'ml-4'}, 'content': [
-                                    {'component': 'VChip', 'props': {
-                                        'color': 'info',
-                                        'variant': 'outlined',
-                                        'label': True,
-                                        'prepend_icon': 'mdi-harddisk'
-                                    }, 'text': f"本地备份: {local_backups_count} 个"}
-                                ]}] if self._enable_local_backup else []),
-                                *([{'component': 'VCol', 'props': {'cols': 'auto', 'class': 'ml-2'}, 'content': [
-                                    {'component': 'VChip', 'props': {
-                                        'color': 'info',
-                                        'variant': 'outlined',
-                                        'label': True,
-                                        'prepend_icon': 'mdi-cloud-outline'
-                                    }, 'text': f"WebDAV备份: {webdav_backups_count} 个"}
-                                ]}] if self._enable_webdav else []),
-                                {'component': 'VSpacer'},
-                                {'component': 'VCol', 'props': {'cols': 'auto'}, 'content': [
-                                    {'component': 'div', 'props': {'class': 'd-flex align-center text-h6'}, 'content':[
-                                        {'component': 'VIcon', 'props': {'icon': 'mdi-server', 'size': 'large', 'class': 'mr-2'}},
-                                        {'component': 'span', 'props': {'class': 'font-weight-medium'}, 'text': f"🖥️ PVE 主机: {self._pve_host or '未配置'}"},
-                                    ]}
-                                ]},
-                            ]
-                        }
-                    ]
-                }
-            ]
-        })
-        
-        # 如果有运行中的任务，显示详细信息
-        if pve_running_tasks:
-            page_content.append({
-                'component': 'VCard',
-                'props': {'variant': 'outlined', 'class': 'mb-4'},
-                'content': [
-                    {
-                        'component': 'VCardTitle',
-                        'props': {'class': 'text-h6'},
-                        'text': '⚡ 正在运行的任务'
-                    },
-                    {
-                        'component': 'VCardText',
-                        'content': [
-                            {
-                                'component': 'VAlert',
-                                'props': {
-                                    'type': 'warning',
-                                    'variant': 'tonal',
-                                    'class': 'mb-2'
-                                },
-                                'text': '检测到PVE端有任务正在运行，插件将等待任务完成后再次尝试。'
-                            }
-                        ] + [
-                            {
-                                'component': 'VListItem',
-                                'props': {'density': 'compact'},
-                                'content': [{'component': 'VListItemSubtitle', 'text': task}]
-                            }
-                            for task in pve_running_tasks
-                        ]
-                    }
-                ]
-            })
-        
-        # 统一的历史记录卡片
-        if not all_history:
-            page_content.append({
-                'component': 'VAlert',
-                'props': {
-                    'type': 'info',
-                    'variant': 'tonal',
-                    'text': '暂无任务历史记录。',
-                    'class': 'mb-2'
-                }
-            })
-        else:
-            history_rows = []
-            for item in all_history:
-                timestamp_str = datetime.fromtimestamp(item.get("timestamp", 0)).strftime('%Y-%m-%d %H:%M:%S') if item.get("timestamp") else "N/A"
-                item_type = item.get("type", "未知")
-                type_color = "primary" if item_type == "备份" else "accent"
-                
-                status_success = item.get("success", False)
-                status_text = "成功" if status_success else "失败"
-                status_color = "success" if status_success else "error"
-                
-                filename_str = item.get("filename", "N/A")
-                message_str = item.get("message", "")
-                
-                details_str = filename_str
-                if item_type == '恢复':
-                    target_vmid = item.get('target_vmid', 'N/A')
-                    details_str = f"{filename_str} ➜ {target_vmid}"
-                elif item_type == '备份':
-                    # 从消息中提取VMID信息
-                    vmid_match = re.search(r'\[VMID: (.*?)\]', message_str)
-                    if vmid_match:
-                        vmids = vmid_match.group(1)
-                        details_str = f"{filename_str} [{vmids}]"
-                        # 移除消息中的VMID信息，避免重复显示
-                        message_str = message_str.replace(f" [VMID: {vmids}]", "")
-                
-                history_rows.append({
-                    'component': 'tr',
-                    'content': [
-                        {'component': 'td', 'props': {'class': 'text-caption'}, 'text': timestamp_str},
-                        {'component': 'td', 'content': [
-                            {'component': 'VChip', 'props': {'color': type_color, 'size': 'small', 'variant': 'flat'}, 'text': item_type}
-                        ]},
-                        {'component': 'td', 'content': [
-                            {'component': 'VChip', 'props': {'color': status_color, 'size': 'small', 'variant': 'outlined'}, 'text': status_text}
-                        ]},
-                        {'component': 'td', 'text': details_str},
-                        {'component': 'td', 'text': message_str},
-                    ]
-                })
-
-            page_content.append({
-                "component": "VCard",
-                "props": {"variant": "outlined", "class": "mb-4"},
-                "content": [
-                    {
-                        "component": "VCardTitle",
-                        "props": {"class": "text-h6"},
-                        "text": "📊 任务历史"
-                    },
-                    {
-                        "component": "VCardText",
-                        "content": [
-                            {
-                                "component": "VTable",
-                                "props": {
-                                    "hover": True,
-                                    "density": "compact"
-                                },
-                                "content": [
-                                    {
-                                        'component': 'thead',
-                                        'content': [
-                                            {
-                                                'component': 'tr',
-                                                'content': [
-                                                    {'component': 'th', 'text': '时间'},
-                                                    {'component': 'th', 'text': '类型'},
-                                                    {'component': 'th', 'text': '状态'},
-                                                    {'component': 'th', 'text': '详情'},
-                                                    {'component': 'th', 'text': '消息'}
-                                                ]
-                                            }
-                                        ]
-                                    },
-                                    {
-                                        'component': 'tbody',
-                                        'content': history_rows
-                                    }
-                                ]
-                            }
-                        ]
-                    }
-                ]
-            })
-        
-        return page_content
-
-    def stop_service(self):
-        """完全停止服务并清理资源"""
-        try:
-            # 1. 等待当前任务完成
-            if self._lock and hasattr(self._lock, 'locked') and self._lock.locked():
-                logger.info(f"等待 {self.plugin_name} 当前任务执行完成...")
-                acquired = self._lock.acquire(timeout=300)
-                if acquired:
-                    self._lock.release()
-                else:
-                    logger.warning(f"{self.plugin_name} 等待任务超时。")
-            
-            # 等待恢复任务完成
-            if self._restore_lock and hasattr(self._restore_lock, 'locked') and self._restore_lock.locked():
-                logger.info(f"等待 {self.plugin_name} 当前恢复任务执行完成...")
-                acquired = self._restore_lock.acquire(timeout=300)
-                if acquired:
-                    self._restore_lock.release()
-                else:
-                    logger.warning(f"{self.plugin_name} 等待恢复任务超时。")
-            
-            # 等待全局任务锁释放
-            if self._global_task_lock and hasattr(self._global_task_lock, 'locked') and self._global_task_lock.locked():
-                logger.info(f"等待 {self.plugin_name} 全局任务锁释放...")
-                acquired = self._global_task_lock.acquire(timeout=300)
-                if acquired:
-                    self._global_task_lock.release()
-                else:
-                    logger.warning(f"{self.plugin_name} 等待全局任务锁超时。")
-            
-            # 2. 停止调度器
-            if self._scheduler:
-                try:
-                    # 移除所有任务
-                    self._scheduler.remove_all_jobs()
-                    # 关闭调度器
-                    if self._scheduler.running:
-                        self._scheduler.shutdown(wait=True)
-                    self._scheduler = None
-                except Exception as e:
-                    logger.error(f"停止调度器时出错: {str(e)}")
-            
-            # 3. 重置状态
-            self._running = False
-            if not self._stopped:
-                logger.info(f"{self.plugin_name} 服务已完全停止。")
-                self._stopped = True
-            
-            # 4. 清理配置哈希（当插件被禁用时）
-            if not self._enabled:
-                self._last_config_hash = None
-                self.save_data('last_config_hash', None)
-                logger.debug(f"{self.plugin_name} 已清理配置哈希")
-            
-        except Exception as e:
-            logger.error(f"{self.plugin_name} 退出插件失败：{str(e)}")
+    def get_page(self):
+        """
+        Vue模式下，返回None，所有页面渲染交给前端Vue组件
+        """
+        return None
 
     def run_backup_job(self):
         """执行备份任务"""
@@ -2102,23 +1216,21 @@ class ProxmoxVEBackup(_PluginBase):
             base_url = self._webdav_url.rstrip('/')
             webdav_path = self._webdav_path.lstrip('/')
             
-            # 检测是否为Alist服务器（端口5244）
             parsed_url = urlparse(self._webdav_url)
             is_alist = parsed_url.port == 5244 or '5244' in self._webdav_url
             
             # 构建可能的URL列表
             possible_urls = []
             if is_alist:
-                # Alist的特殊路径结构
                 if webdav_path:
                     possible_urls.extend([
-                        f"{base_url}/dav/{webdav_path}",      # Alist标准路径
-                        f"{base_url}/{webdav_path}"           # 直接路径
+                        f"{base_url}/dav/{webdav_path}", 
+                        f"{base_url}/{webdav_path}"
                     ])
                 else:
                     possible_urls.extend([
-                        f"{base_url}/dav",      # Alist标准路径
-                        f"{base_url}"           # 直接路径
+                        f"{base_url}/dav",
+                        f"{base_url}" 
                     ])
             else:
                 # 标准WebDAV路径
@@ -2490,13 +1602,13 @@ class ProxmoxVEBackup(_PluginBase):
                 # Alist的特殊路径结构
                 if webdav_path:
                     possible_urls.extend([
-                        f"{base_url}/dav/{webdav_path}",      # Alist标准路径
-                        f"{base_url}/{webdav_path}"           # 直接路径
+                        f"{base_url}/dav/{webdav_path}",
+                        f"{base_url}/{webdav_path}" 
                     ])
                 else:
                     possible_urls.extend([
-                        f"{base_url}/dav",      # Alist标准路径
-                        f"{base_url}"           # 直接路径
+                        f"{base_url}/dav",
+                        f"{base_url}"
                     ])
             else:
                 # 标准WebDAV路径
@@ -2617,7 +1729,7 @@ class ProxmoxVEBackup(_PluginBase):
         
         return backups
 
-    def run_restore_job(self, filename: str, source: str = "本地备份"):
+    def run_restore_job(self, filename: str, source: str = "本地备份", restore_vmid: str = "", restore_force: bool = False, restore_skip_existing: bool = True):
         """执行恢复任务"""
         if not self._enable_restore:
             logger.error(f"{self.plugin_name} 恢复功能未启用")
@@ -2643,13 +1755,13 @@ class ProxmoxVEBackup(_PluginBase):
             "timestamp": time.time(),
             "success": False,
             "filename": filename,
-            "target_vmid": self._restore_vmid or "自动",
+            "target_vmid": restore_vmid or "自动",
             "message": "恢复任务开始"
         }
         self._restore_activity = "任务开始"
             
         try:
-            logger.info(f"{self.plugin_name} 开始执行恢复任务，文件: {filename}, 来源: {source}")
+            logger.info(f"{self.plugin_name} 开始执行恢复任务，文件: {filename}, 来源: {source}, 目标VMID: {restore_vmid}")
 
             if not self._pve_host or not self._ssh_username or (not self._ssh_password and not self._ssh_key_file):
                 error_msg = "配置不完整：PVE主机地址、SSH用户名或SSH认证信息(密码/密钥)未设置。"
@@ -2660,10 +1772,10 @@ class ProxmoxVEBackup(_PluginBase):
                 return
 
             # 执行恢复操作
-            success, error_msg, target_vmid = self._perform_restore_once(filename, source)
+            success, error_msg, target_vmid = self._perform_restore_once(filename, source, restore_vmid, restore_force, restore_skip_existing)
             
             restore_entry["success"] = success
-            restore_entry["target_vmid"] = target_vmid or self._restore_vmid or "自动"
+            restore_entry["target_vmid"] = target_vmid or restore_vmid or "自动"
             restore_entry["message"] = "恢复成功" if success else f"恢复失败: {error_msg}"
             
             self._send_restore_notification(success=success, message=restore_entry["message"], filename=filename, target_vmid=target_vmid)
@@ -2689,7 +1801,7 @@ class ProxmoxVEBackup(_PluginBase):
                     pass
             logger.info(f"{self.plugin_name} 恢复任务执行完成。")
 
-    def _perform_restore_once(self, filename: str, source: str) -> Tuple[bool, Optional[str], Optional[str]]:
+    def _perform_restore_once(self, filename: str, source: str, restore_vmid: str = "", restore_force: bool = False, restore_skip_existing: bool = True) -> Tuple[bool, Optional[str], Optional[str]]:
         """
         执行一次恢复操作
         :return: (是否成功, 错误消息, 目标VMID)
@@ -2766,7 +1878,7 @@ class ProxmoxVEBackup(_PluginBase):
 
             # 3. 检查备份文件中的VMID
             original_vmid = self._extract_vmid_from_backup(filename)
-            target_vmid = self._restore_vmid or original_vmid
+            target_vmid = str(restore_vmid) if restore_vmid else original_vmid
             
             if not target_vmid:
                 return False, "无法从备份文件名中提取VMID，请手动指定目标VMID", None
@@ -2774,14 +1886,15 @@ class ProxmoxVEBackup(_PluginBase):
             # 4. 检查目标VM是否已存在
             vm_exists = self._check_vm_exists(ssh, target_vmid)
             if vm_exists:
-                if self._restore_skip_existing:
+                if restore_skip_existing:
                     return False, f"目标VM {target_vmid} 已存在，跳过恢复", target_vmid
-                elif not self._restore_force:
+                elif not restore_force:
                     return False, f"目标VM {target_vmid} 已存在，请启用强制恢复或跳过已存在选项", target_vmid
                 else:
                     # 强制恢复：删除现有VM
                     logger.info(f"{self.plugin_name} 目标VM {target_vmid} 已存在，执行强制恢复")
-                    delete_success, delete_error = self._delete_vm(ssh, target_vmid)
+                    is_lxc = 'lxc' in filename.lower()
+                    delete_success, delete_error = self._delete_vm(ssh, target_vmid, is_lxc)
                     if not delete_success:
                         return False, f"删除现有VM失败: {delete_error}", target_vmid
 
@@ -3185,13 +2298,467 @@ class ProxmoxVEBackup(_PluginBase):
             logger.error(f"{self.plugin_name} {error_msg}")
             return False, error_msg, None, {}
 
-# ===== 模块级API函数 =====
-def api_restore_backup(filename: str, source: str = "本地备份"):
-    plugin = ProxmoxVEBackup.get_instance()
-    if plugin is None:
-        return {"success": False, "message": "插件实例未初始化"}
-    try:
-        plugin.run_restore_job(filename, source)
-        return {"success": True, "message": "恢复任务已启动"}
-    except Exception as e:
-        return {"success": False, "message": f"启动恢复任务失败: {str(e)}"}
+    def get_render_mode(self) -> tuple:
+        """
+        声明为Vue模式，并指定前端静态资源目录（相对插件目录）
+        """
+        return "vue", "dist/assets"
+
+    def _get_config(self):
+        """API处理函数：返回当前配置"""
+        return self.get_config() or {}
+
+    def _get_status(self):
+        """API处理函数：返回插件状态"""
+        # 获取下次运行时间
+        next_run_time = None
+        if self._scheduler:
+            job = self._scheduler.get_job(f"{self.plugin_name}定时服务")
+            if job and job.next_run_time:
+                import pytz
+                from app.core.config import settings
+                next_run_time = job.next_run_time.astimezone(pytz.timezone(settings.TZ)).strftime("%Y-%m-%d %H:%M:%S")
+        return {
+            "enabled": self._enabled,
+            "backup_activity": self._backup_activity,
+            "restore_activity": self._restore_activity,
+            "enable_restore": self._enable_restore,
+            "cron": self._cron,
+            "next_run_time": next_run_time,
+        }
+
+    def _save_config(self, data: dict = None):
+        """API处理函数：保存配置"""
+        if not data:
+            # 尝试从请求中获取数据
+            import sys
+            if 'flask' in sys.modules:
+                from flask import request
+                data = request.json or {}
+            else:
+                data = {}
+        self.init_plugin(data)
+        return {"success": True, "message": "配置已保存"}
+
+    def _get_backup_history(self):
+        return self._load_backup_history() or []
+
+    def _run_backup(self):
+        import threading
+        threading.Thread(target=self.run_backup_job).start()
+        return {"success": True, "message": "备份任务已启动"}
+
+    def _clear_history_api(self):
+        self._clear_all_history()
+        return {"success": True, "message": "历史已清理"}
+
+    def _get_restore_history(self):
+        return self._load_restore_history() or []
+
+    def _get_dashboard_data(self):
+        """API处理函数：返回仪表板数据"""
+        backup_history = self._load_backup_history()
+        restore_history = self._load_restore_history()
+        available_backups = self._get_available_backups()
+        
+        # 统计成功和失败的备份
+        successful_backups = sum(1 for item in backup_history if item.get("success", False))
+        failed_backups = len(backup_history) - successful_backups
+        
+        # 统计成功和失败的恢复
+        successful_restores = sum(1 for item in restore_history if item.get("success", False))
+        failed_restores = len(restore_history) - successful_restores
+        
+        # 统计本地和WebDAV备份数量
+        local_backups_count = sum(1 for b in available_backups if b['source'] == '本地备份')
+        webdav_backups_count = sum(1 for b in available_backups if b['source'] == 'WebDAV备份')
+        
+        return {
+            "backup_stats": {
+                "total": len(backup_history),
+                "successful": successful_backups,
+                "failed": failed_backups
+            },
+            "restore_stats": {
+                "total": len(restore_history),
+                "successful": successful_restores,
+                "failed": failed_restores
+            },
+            "available_backups": {
+                "local": local_backups_count,
+                "webdav": webdav_backups_count,
+                "total": len(available_backups)
+            },
+            "status": {
+                "backup_activity": self._backup_activity,
+                "restore_activity": self._restore_activity,
+                "running": self._running
+            }
+        }
+
+    def _get_pve_status_api(self):
+        return get_pve_status(
+            self._pve_host,
+            self._ssh_port,
+            self._ssh_username,
+            self._ssh_password,
+            self._ssh_key_file
+        )
+
+    def _get_container_status_api(self):
+        # 合并QEMU和LXC
+        qemu_list = get_qemu_status(
+            self._pve_host,
+            self._ssh_port,
+            self._ssh_username,
+            self._ssh_password,
+            self._ssh_key_file
+        )
+        lxc_list = get_container_status(
+            self._pve_host,
+            self._ssh_port,
+            self._ssh_username,
+            self._ssh_password,
+            self._ssh_key_file
+        )
+        return qemu_list + lxc_list
+
+    def _get_available_backups_api(self):
+        """API处理函数：返回可用备份文件列表"""
+        return self._get_available_backups() or []
+
+    def _delete_backup_api(self, data: dict = None):
+        """API处理函数：删除本地备份文件或WebDAV备份文件"""
+        import os
+        from pathlib import Path
+        if not data:
+            # 兼容flask
+            import sys
+            if 'flask' in sys.modules:
+                from flask import request
+                data = request.json or {}
+            else:
+                data = {}
+        filename = data.get("filename")
+        source = data.get("source", "本地备份")
+        if not filename:
+            return {"success": False, "message": "缺少文件名参数"}
+        if source == "本地备份":
+            # 防止路径穿越
+            backup_dir = Path(self._backup_path)
+            file_path = backup_dir / filename
+            try:
+                # 只允许删除实际备份目录下的文件
+                if not file_path.is_file() or not str(file_path.resolve()).startswith(str(backup_dir.resolve())):
+                    return {"success": False, "message": "文件不存在或路径非法"}
+                os.remove(file_path)
+                return {"success": True, "message": f"已删除备份文件: {filename}"}
+            except Exception as e:
+                return {"success": False, "message": f"删除失败: {str(e)}"}
+        elif source == "WebDAV备份":
+            # WebDAV 删除逻辑
+            try:
+                import requests
+                from urllib.parse import urljoin, urlparse
+                # 构建WebDAV基础URL
+                base_url = self._webdav_url.rstrip('/')
+                webdav_path = self._webdav_path.lstrip('/')
+                parsed_url = urlparse(self._webdav_url)
+                is_alist = parsed_url.port == 5244 or '5244' in self._webdav_url
+                # 构建可能的URL列表
+                possible_urls = []
+                if is_alist:
+                    if webdav_path:
+                        possible_urls.extend([
+                            f"{base_url}/dav/{webdav_path}/{filename}",
+                            f"{base_url}/{webdav_path}/{filename}"
+                        ])
+                    else:
+                        possible_urls.extend([
+                            f"{base_url}/dav/{filename}",
+                            f"{base_url}/{filename}"
+                        ])
+                else:
+                    if webdav_path:
+                        possible_urls.extend([
+                            f"{base_url}/{webdav_path}/{filename}",
+                            f"{base_url}/dav/{webdav_path}/{filename}",
+                            f"{base_url}/remote.php/webdav/{webdav_path}/{filename}",
+                            f"{base_url}/dav/files/{self._webdav_username}/{webdav_path}/{filename}"
+                        ])
+                    else:
+                        possible_urls.extend([
+                            f"{base_url}/{filename}",
+                            f"{base_url}/dav/{filename}",
+                            f"{base_url}/remote.php/webdav/{filename}"
+                        ])
+                # 依次尝试删除
+                last_error = None
+                for url in possible_urls:
+                    try:
+                        resp = requests.delete(
+                            url,
+                            auth=(self._webdav_username, self._webdav_password),
+                            headers={'User-Agent': 'MoviePilot/1.0'},
+                            timeout=30,
+                            verify=False
+                        )
+                        if resp.status_code in [200, 201, 204, 404]:
+                            return {"success": True, "message": f"已删除WebDAV备份文件: {filename}"}
+                        else:
+                            last_error = f"状态码: {resp.status_code}, 响应: {resp.text}"
+                    except Exception as e:
+                        last_error = str(e)
+                        continue
+                return {"success": False, "message": f"WebDAV删除失败: {last_error or '所有URL均失败'}"}
+            except Exception as e:
+                return {"success": False, "message": f"WebDAV删除异常: {str(e)}"}
+        else:
+            return {"success": False, "message": "仅支持本地备份和WebDAV备份删除"}
+
+    def _restore_backup_api(self, data: dict = None):
+        """API处理函数：恢复本地备份文件"""
+        import threading
+        if not data:
+            # 兼容flask
+            import sys
+            if 'flask' in sys.modules:
+                from flask import request
+                data = request.json or {}
+            else:
+                data = {}
+        filename = data.get("filename")
+        source = data.get("source", "本地备份")
+        restore_vmid = data.get("restore_vmid", "")
+        restore_force = data.get("restore_force", False)
+        restore_skip_existing = data.get("restore_skip_existing", True)
+        if not filename:
+            return {"success": False, "message": "缺少文件名参数"}
+        if source != "本地备份":
+            return {"success": False, "message": "仅支持本地备份恢复"}
+        # 直接参数传递，不再赋值到self
+        try:
+            threading.Thread(
+                target=self.run_restore_job,
+                args=(filename, source, restore_vmid, restore_force, restore_skip_existing)
+            ).start()
+            return {"success": True, "message": f"已启动恢复任务: {filename}"}
+        except Exception as e:
+            return {"success": False, "message": f"恢复任务启动失败: {str(e)}"}
+
+    def _download_backup_api(self, filename: str = None, source: str = "本地备份", apikey: str = None):
+        """API处理函数：下载本地备份文件或WebDAV备份文件（兼容FastAPI/Flask插件系统，参数显式声明）"""
+        import os
+        from pathlib import Path
+        import sys
+        import tempfile
+        # FastAPI 环境
+        if 'fastapi' in sys.modules:
+            from fastapi.responses import FileResponse, JSONResponse
+            from app.core.config import settings
+            if apikey is not None:
+                if apikey != settings.API_TOKEN:
+                    return JSONResponse({"success": False, "message": "API_KEY 校验不通过"}, status_code=401)
+            if not filename:
+                return JSONResponse({"success": False, "message": "缺少文件名参数"}, status_code=400)
+            if source == "本地备份":
+                backup_dir = Path(self._backup_path)
+                file_path = backup_dir / filename
+                if not file_path.is_file() or not str(file_path.resolve()).startswith(str(backup_dir.resolve())):
+                    return JSONResponse({"success": False, "message": "文件不存在或路径非法"}, status_code=404)
+                return FileResponse(
+                    path=str(file_path),
+                    filename=filename,
+                    media_type="application/octet-stream"
+                )
+            elif source == "WebDAV备份":
+                # 先下载到临时目录
+                temp_dir = Path(tempfile.gettempdir()) / "proxmoxvebackup_temp"
+                temp_dir.mkdir(parents=True, exist_ok=True)
+                temp_file = temp_dir / filename
+                success, error = self._download_from_webdav(filename, str(temp_file))
+                if not success:
+                    return JSONResponse({"success": False, "message": f"WebDAV下载失败: {error}"}, status_code=400)
+                resp = FileResponse(
+                    path=str(temp_file),
+                    filename=filename,
+                    media_type="application/octet-stream"
+                )
+                # 下载完自动清理临时文件
+                import threading
+                def cleanup():
+                    try:
+                        temp_file.unlink(missing_ok=True)
+                    except Exception:
+                        pass
+                threading.Thread(target=cleanup, daemon=True).start()
+                return resp
+            else:
+                return JSONResponse({"success": False, "message": "暂不支持该来源的备份文件下载"}, status_code=400)
+        # Flask 环境
+        elif 'flask' in sys.modules:
+            from flask import request, send_file, abort
+            filename = request.args.get("filename")
+            source = request.args.get("source", "本地备份")
+            apikey = request.args.get("apikey")
+            from app.core.config import settings
+            if apikey is not None:
+                if apikey != settings.API_TOKEN:
+                    return abort(401, description="API_KEY 校验不通过")
+            if not filename:
+                return abort(400, description="缺少文件名参数")
+            if source == "本地备份":
+                backup_dir = Path(self._backup_path)
+                file_path = backup_dir / filename
+                if not file_path.is_file() or not str(file_path.resolve()).startswith(str(backup_dir.resolve())):
+                    return abort(404, description="文件不存在或路径非法")
+                return send_file(
+                    str(file_path),
+                    as_attachment=True,
+                    download_name=filename,
+                    mimetype="application/octet-stream"
+                )
+            elif source == "WebDAV备份":
+                temp_dir = Path(tempfile.gettempdir()) / "proxmoxvebackup_temp"
+                temp_dir.mkdir(parents=True, exist_ok=True)
+                temp_file = temp_dir / filename
+                success, error = self._download_from_webdav(filename, str(temp_file))
+                if not success:
+                    return abort(400, description=f"WebDAV下载失败: {error}")
+                resp = send_file(
+                    str(temp_file),
+                    as_attachment=True,
+                    download_name=filename,
+                    mimetype="application/octet-stream"
+                )
+                import threading
+                def cleanup():
+                    try:
+                        temp_file.unlink(missing_ok=True)
+                    except Exception:
+                        pass
+                threading.Thread(target=cleanup, daemon=True).start()
+                return resp
+            else:
+                return abort(400, description="暂不支持该来源的备份文件下载")
+        else:
+            return {"success": False, "message": "仅支持Flask/FastAPI环境下载"}
+
+    def _get_token(self):
+        """API处理函数：返回API_TOKEN"""
+        from app.core.config import settings
+        return {"api_token": settings.API_TOKEN}
+
+    def _container_action_api(self, data: dict = None):
+        import paramiko
+        if not data:
+            import sys
+            if 'flask' in sys.modules:
+                from flask import request
+                data = request.json or {}
+            else:
+                data = {}
+        vmid = str(data.get("vmid", "")).strip()
+        action = str(data.get("action", "")).strip()  # start/stop/reboot
+        vmtype = str(data.get("type", "")).strip().lower()  # qemu/lxc
+        if not vmid or not action or not vmtype:
+            return {"success": False, "message": "缺少参数"}
+        if action not in ["start", "stop", "reboot"]:
+            return {"success": False, "message": "不支持的操作"}
+        if vmtype not in ["qemu", "lxc"]:
+            return {"success": False, "message": "类型必须为qemu或lxc"}
+        cmd = f"{'qm' if vmtype == 'qemu' else 'pct'} {action} {vmid}"
+        ssh = paramiko.SSHClient()
+        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        try:
+            if self._ssh_key_file:
+                private_key = paramiko.RSAKey.from_private_key_file(self._ssh_key_file)
+                ssh.connect(self._pve_host, port=self._ssh_port, username=self._ssh_username, pkey=private_key)
+            else:
+                ssh.connect(self._pve_host, port=self._ssh_port, username=self._ssh_username, password=self._ssh_password)
+            stdin, stdout, stderr = ssh.exec_command(cmd)
+            exit_status = stdout.channel.recv_exit_status()
+            if exit_status == 0:
+                return {"success": True, "message": f"{vmtype.upper()} {vmid} {action} 成功"}
+            else:
+                error_output = stderr.read().decode().strip()
+                return {"success": False, "message": f"操作失败: {error_output or '未知错误'}"}
+        except Exception as e:
+            return {"success": False, "message": f"SSH连接或命令执行失败: {str(e)}"}
+        finally:
+            try:
+                ssh.close()
+            except:
+                pass
+
+    def _container_snapshot_api(self, data: dict = None):
+        import paramiko
+        import time
+        if not data:
+            import sys
+            if 'flask' in sys.modules:
+                from flask import request
+                data = request.json or {}
+            else:
+                data = {}
+        vmid = str(data.get("vmid", "")).strip()
+        vmtype = str(data.get("type", "")).strip().lower()  # qemu/lxc
+        snapname = str(data.get("name", "")).strip()
+        if not vmid or not vmtype:
+            return {"success": False, "message": "缺少参数"}
+        if vmtype not in ["qemu", "lxc"]:
+            return {"success": False, "message": "类型必须为qemu或lxc"}
+        if not snapname:
+            snapname = f"auto-{int(time.time())}"
+        cmd = f"{'qm' if vmtype == 'qemu' else 'pct'} snapshot {vmid} {snapname}"
+        ssh = paramiko.SSHClient()
+        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        try:
+            if self._ssh_key_file:
+                private_key = paramiko.RSAKey.from_private_key_file(self._ssh_key_file)
+                ssh.connect(self._pve_host, port=self._ssh_port, username=self._ssh_username, pkey=private_key)
+            else:
+                ssh.connect(self._pve_host, port=self._ssh_port, username=self._ssh_username, password=self._ssh_password)
+            stdin, stdout, stderr = ssh.exec_command(cmd)
+            exit_status = stdout.channel.recv_exit_status()
+            if exit_status == 0:
+                return {"success": True, "message": f"{vmtype.upper()} {vmid} 快照创建成功: {snapname}"}
+            else:
+                error_output = stderr.read().decode().strip()
+                return {"success": False, "message": f"快照创建失败: {error_output or '未知错误'}"}
+        except Exception as e:
+            return {"success": False, "message": f"SSH连接或命令执行失败: {str(e)}"}
+        finally:
+            try:
+                ssh.close()
+            except:
+                pass
+
+    def _host_action_api(self, data: dict = None):
+        import paramiko
+        if not data:
+            import sys
+            if 'flask' in sys.modules:
+                from flask import request
+                data = request.json or {}
+            else:
+                data = {}
+        action = data.get("action", "")
+        if action not in ("reboot", "shutdown"):
+            return {"success": False, "msg": "action参数必须为reboot或shutdown"}
+        try:
+            ssh = paramiko.SSHClient()
+            ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            if self._ssh_key_file:
+                private_key = paramiko.RSAKey.from_private_key_file(self._ssh_key_file)
+                ssh.connect(self._pve_host, port=self._ssh_port, username=self._ssh_username, pkey=private_key, timeout=5)
+            else:
+                ssh.connect(self._pve_host, port=self._ssh_port, username=self._ssh_username, password=self._ssh_password, timeout=5)
+            if action == "reboot":
+                ssh.exec_command("reboot")
+            else:
+                ssh.exec_command("poweroff")
+            ssh.close()
+            return {"success": True, "msg": f"主机{action}命令已发送"}
+        except Exception as e:
+            return {"success": False, "msg": str(e)}
