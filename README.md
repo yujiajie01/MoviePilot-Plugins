@@ -164,7 +164,7 @@ MoviePilot第三方插件库，提供了一系列实用的插件来增强MoviePi
 </details>
 
 #### <img src="https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/proxmox.webp" width="32" style="vertical-align:middle;"> PVE虚拟机守护神 (ProxmoxVEBackup)
--   **版本**: `v2.0.0`
+-   **版本**: `v2.0.1`
 -   **作者**: [@M.Jinxi](https://github.com/xijin285)
 
 **简介**：
@@ -183,6 +183,9 @@ MoviePilot第三方插件库，提供了一系列实用的插件来增强MoviePi
 - 🛠️ **配置灵活，适配多场景**：支持多主机、多存储、多种备份/恢复策略，满足不同用户需求。
 
 **最新更新**：
+> `v2.0.1`  
+> 🎨 容器状态细节体验，操作界面及移动端细节优化。
+> 
 > `v2.0.0`  
 > 🎉 全新架构重构，全面升级UI与交互体验；批量操作与任务调度更智能高效；备份/恢复流程深度优化，兼容性与稳定性大幅提升；支持多主题、多存储、多场景，通知与历史管理更完善，带来前所未有的PVE虚拟化管理体验。  
 > 2.0.0为全新大版本，历史更新见下方。

@@ -24,11 +24,11 @@ class ProxmoxVEBackup(_PluginBase):
     # 插件名称
     plugin_name = "PVE虚拟机守护神"
     # 插件描述
-    plugin_desc = "一站式PVE虚拟化管理平台，智能自动化集成可视化界面高效掌控虚拟机与容器"
+    plugin_desc = "PVE虚拟机守护神，自动化备份与恢复容器，提供完整的备份管理解决方案。"
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/proxmox.webp"
     # 插件版本
-    plugin_version = "2.0"
+    plugin_version = "2.0.1"
     # 插件作者
     plugin_author = "M.Jinxi"
     # 作者主页
@@ -76,7 +76,7 @@ class ProxmoxVEBackup(_PluginBase):
     _storage_name: str = "local"  # 存储名称
     _backup_mode: str = "snapshot"  # 备份模式，默认snapshot
     _compress_mode: str = "zstd"    # 压缩模式，默认zstd
-    _auto_delete_after_download: bool = False  # 下载后自动删除PVE备份
+    _auto_delete_after_download: bool = True  # 下载后自动删除PVE备份
     _download_all_backups: bool = False  # 下载所有备份文件（多VM备份时）
 
     # WebDAV配置
@@ -2421,6 +2421,7 @@ class ProxmoxVEBackup(_PluginBase):
             self._ssh_password,
             self._ssh_key_file
         )
+        # 直接返回，displayName字段已由pve.py补充
         return qemu_list + lxc_list
 
     def _get_available_backups_api(self):

@@ -91,9 +91,16 @@ def get_pve_status(host, port, username, password, key_file):
     return result
 
 
+def get_node_name(ssh):
+    stdin, stdout, stderr = ssh.exec_command('hostname')
+    return stdout.read().decode().strip()
+
+
 def get_qemu_status(host, port, username, password, key_file):
     """
-    获取所有QEMU虚拟机的详细状态，修复name字段丢失问题
+    获取所有QEMU虚拟机的详细状态，补充displayName和tags字段。
+    tags 字段通过 qm config <vmid> 解析 tags: 行获得。
+    uptime 字段通过 pvesh 命令获取。
     """
     vms = []
     try:
@@ -104,33 +111,74 @@ def get_qemu_status(host, port, username, password, key_file):
             ssh.connect(host, port=port, username=username, pkey=private_key, timeout=5)
         else:
             ssh.connect(host, port=port, username=username, password=password, timeout=5)
-        # 优先用 -o 明确字段
         try:
-            qm_cmd = "qm list -o vmid,name,status,lock,uptime,cpu,mem,maxmem,disk,maxdisk,pid"
-            stdin, stdout, stderr = ssh.exec_command(qm_cmd)
+            node_name = get_node_name(ssh)
+            stdin, stdout, stderr = ssh.exec_command("qm list")
             lines = stdout.read().decode().splitlines()
-            if not lines or len(lines) < 2 or 'unknown option' in (lines[0].lower()):
-                raise Exception('no -o support')
-            headers = re.split(r'\s+', lines[0].strip())
+            if not lines or len(lines) < 2:
+                ssh.close()
+                return []
+            headers = [h.lower() for h in re.split(r'\s+', lines[0].strip())]
             for line in lines[1:]:
                 if not line.strip():
                     continue
-                parts = re.split(r'\s+', line.strip(), maxsplit=len(headers)-1)
+                m = re.search(r'\(([^)]+)\)', line)
+                name = m.group(1) if m else ''
+                parts = re.split(r'\s+', line.strip())
                 data = dict(zip(headers, parts))
-                name = data.get('name','')
                 if not name:
-                    # 尝试用正则从 line 里提取括号内名字
-                    m = re.search(r'\(([^)]+)\)', line)
-                    if m:
-                        name = m.group(1)
+                    name = data.get('name','')
                 if not name:
                     name = f"QEMU-{data.get('vmid','')}"
+                display_name = name
+                tags = ''
+                vmid = data.get('vmid','')
+                # 解析 displayName和tags
+                if vmid:
+                    try:
+                        stdin2, stdout2, stderr2 = ssh.exec_command(f"qm config {vmid}")
+                        config_lines = stdout2.read().decode().splitlines()
+                        for cl in config_lines:
+                            if cl.startswith('name:'):
+                                real_name = cl.split(':',1)[1].strip()
+                                if real_name:
+                                    display_name = real_name
+                        for cl in config_lines:
+                            if cl.startswith('tags:'):
+                                tags = cl.split(':',1)[1].strip()
+                                break
+                    except Exception:
+                        tags = ''
+                # 用paramiko invoke_shell方式获取uptime，兼容极端受限环境
+                uptime = 0
+                if vmid:
+                    try:
+                        import json
+                        stdin_uptime, stdout_uptime, stderr_uptime = ssh.exec_command(f"/usr/bin/pvesh get /nodes/{node_name}/qemu/{vmid}/status/current --output-format json")
+                        output = stdout_uptime.read().decode()
+                        data_json = json.loads(output)
+                        uptime = data_json.get('uptime', '')
+                    except Exception as e:
+                        uptime = 0
+                status = data.get('status','')
+                if not status:
+                    vmid = data.get('vmid','')
+                    if vmid:
+                        try:
+                            stdin3, stdout3, stderr3 = ssh.exec_command(f"qm status {vmid}")
+                            status_line = stdout3.read().decode().strip()
+                            m = re.search(r'status:\s*(\w+)', status_line)
+                            if m:
+                                status = m.group(1)
+                        except Exception:
+                            pass
                 vms.append({
                     'vmid': data.get('vmid',''),
                     'name': name,
-                    'status': data.get('status',''),
+                    'displayName': display_name,
+                    'status': status,
                     'lock': data.get('lock',''),
-                    'uptime': data.get('uptime',''),
+                    'uptime': uptime,
                     'cpu': data.get('cpu',''),
                     'mem': data.get('mem',''),
                     'maxmem': data.get('maxmem',''),
@@ -140,53 +188,21 @@ def get_qemu_status(host, port, username, password, key_file):
                     'netin': '',
                     'netout': '',
                     'type': 'qemu',
+                    'tags': tags
                 })
-        except Exception:
-            # 兼容老PVE，手动解析
-            stdin, stdout, stderr = ssh.exec_command("qm list")
-            lines = stdout.read().decode().splitlines()
-            if not lines or len(lines) < 2:
-                ssh.close()
-                return []
-            headers = re.split(r'\s+', lines[0].strip())
-            for line in lines[1:]:
-                if not line.strip():
-                    continue
-                # 尝试用正则提取 (name)
-                m = re.search(r'\(([^)]+)\)', line)
-                name = m.group(1) if m else ''
-                parts = re.split(r'\s+', line.strip())
-                data = dict(zip(headers, parts))
-                if not name:
-                    name = data.get('Name','')
-                if not name:
-                    name = f"QEMU-{data.get('VMID','')}"
-                vms.append({
-                    'vmid': data.get('VMID',''),
-                    'name': name,
-                    'status': data.get('Status',''),
-                    'lock': data.get('Lock',''),
-                    'uptime': data.get('Uptime',''),
-                    'cpu': data.get('CPU',''),
-                    'mem': data.get('Mem',''),
-                    'maxmem': data.get('MaxMem',''),
-                    'disk': data.get('Disk',''),
-                    'maxdisk': data.get('MaxDisk',''),
-                    'pid': data.get('Pid',''),
-                    'netin': '',
-                    'netout': '',
-                    'type': 'qemu',
-                })
+        except Exception as e:
+            vms.append({'error': str(e)})
         ssh.close()
     except Exception as e:
         vms.append({'error': str(e)})
     return vms
 
 
-
 def get_container_status(host, port, username, password, key_file):
     """
-    获取所有LXC容器的详细状态，修复name字段丢失问题
+    获取所有LXC容器的详细状态，补充displayName和tags字段。
+    tags 字段通过 pct config <vmid> 解析 tags: 行获得。
+    uptime 字段通过 pvesh 命令获取。
     """
     containers = []
     try:
@@ -198,31 +214,72 @@ def get_container_status(host, port, username, password, key_file):
         else:
             ssh.connect(host, port=port, username=username, password=password, timeout=5)
         try:
-            pct_cmd = "pct list -o vmid,name,status,lock,uptime,cpu,mem,maxmem,swap,maxswap,disk,maxdisk,pid,netin,netout"
-            stdin, stdout, stderr = ssh.exec_command(pct_cmd)
+            node_name = get_node_name(ssh)
+            stdin, stdout, stderr = ssh.exec_command("pct list")
             lines = stdout.read().decode().splitlines()
-            err = stderr.read().decode().strip()
-            if err or (lines and 'Unknown option' in lines[0]):
-                raise Exception('no -o support')
-            headers = re.split(r'\s+', lines[0].strip())
+            if not lines or len(lines) < 2:
+                ssh.close()
+                return []
+            headers = [h.lower() for h in re.split(r'\s+', lines[0].strip())]
             for line in lines[1:]:
                 if not line.strip():
                     continue
-                parts = re.split(r'\s+', line.strip(), maxsplit=len(headers)-1)
+                m = re.search(r'\(([^)]+)\)', line)
+                name = m.group(1) if m else ''
+                parts = re.split(r'\s+', line.strip())
                 data = dict(zip(headers, parts))
-                name = data.get('name','')
                 if not name:
-                    m = re.search(r'\(([^)]+)\)', line)
-                    if m:
-                        name = m.group(1)
+                    name = data.get('name','')
                 if not name:
                     name = f"LXC-{data.get('vmid','')}"
+                display_name = name
+                tags = ''
+                uptime = 0
+                vmid = data.get('vmid','')
+                if name.startswith('LXC-'):
+                    try:
+                        stdin2, stdout2, stderr2 = ssh.exec_command(f"pct config {vmid}")
+                        config_lines = stdout2.read().decode().splitlines()
+                        for cl in config_lines:
+                            if cl.startswith('hostname:'):
+                                real_name = cl.split(':',1)[1].strip()
+                                if real_name:
+                                    display_name = real_name
+                        for cl in config_lines:
+                            if cl.startswith('tags:'):
+                                tags = cl.split(':',1)[1].strip()
+                                break
+                    except Exception:
+                        tags = ''
+                # 用paramiko invoke_shell方式获取uptime，兼容极端受限环境
+                if vmid:
+                    try:
+                        import json
+                        stdin_uptime, stdout_uptime, stderr_uptime = ssh.exec_command(f"/usr/bin/pvesh get /nodes/{node_name}/lxc/{vmid}/status/current --output-format json")
+                        output = stdout_uptime.read().decode()
+                        data_json = json.loads(output)
+                        uptime = data_json.get('uptime', '')
+                    except Exception as e:
+                        uptime = 0
+                status = data.get('status','')
+                if not status:
+                    vmid = data.get('vmid','')
+                    if vmid:
+                        try:
+                            stdin3, stdout3, stderr3 = ssh.exec_command(f"pct status {vmid}")
+                            status_line = stdout3.read().decode().strip()
+                            m = re.search(r'status:\s*(\w+)', status_line)
+                            if m:
+                                status = m.group(1)
+                        except Exception:
+                            pass
                 containers.append({
                     'vmid': data.get('vmid',''),
                     'name': name,
-                    'status': data.get('status',''),
+                    'displayName': display_name,
+                    'status': status,
                     'lock': data.get('lock',''),
-                    'uptime': data.get('uptime',''),
+                    'uptime': uptime,
                     'cpu': data.get('cpu',''),
                     'mem': data.get('mem',''),
                     'maxmem': data.get('maxmem',''),
@@ -234,43 +291,10 @@ def get_container_status(host, port, username, password, key_file):
                     'netin': data.get('netin',''),
                     'netout': data.get('netout',''),
                     'type': 'lxc',
+                    'tags': tags
                 })
-        except Exception:
-            stdin, stdout, stderr = ssh.exec_command("pct list")
-            lines = stdout.read().decode().splitlines()
-            if not lines or len(lines) < 2:
-                ssh.close()
-                return []
-            headers = re.split(r'\s+', lines[0].strip())
-            for line in lines[1:]:
-                if not line.strip():
-                    continue
-                m = re.search(r'\(([^)]+)\)', line)
-                name = m.group(1) if m else ''
-                parts = re.split(r'\s+', line.strip())
-                data = dict(zip(headers, parts))
-                if not name:
-                    name = data.get('Name','')
-                if not name:
-                    name = f"LXC-{data.get('VMID','')}"
-                containers.append({
-                    'vmid': data.get('VMID',''),
-                    'name': name,
-                    'status': data.get('Status',''),
-                    'lock': data.get('Lock',''),
-                    'uptime': data.get('Uptime',''),
-                    'cpu': data.get('CPU',''),
-                    'mem': data.get('Mem',''),
-                    'maxmem': data.get('MaxMem',''),
-                    'swap': data.get('Swap',''),
-                    'maxswap': data.get('MaxSwap',''),
-                    'disk': data.get('Disk',''),
-                    'maxdisk': data.get('MaxDisk',''),
-                    'pid': data.get('Pid',''),
-                    'netin': data.get('NetIn',''),
-                    'netout': data.get('NetOut',''),
-                    'type': 'lxc',
-                })
+        except Exception as e:
+            containers.append({'error': str(e)})
         ssh.close()
     except Exception as e:
         containers.append({'error': str(e)})

@@ -104,7 +104,7 @@ const config = reactive({
   backup_vmid: '',
   backup_mode: 'snapshot',
   compress_mode: 'zstd',
-  auto_delete_after_download: false,
+  auto_delete_after_download: true,
   download_all_backups: false,
   enable_restore: false,
   restore_force: false,
@@ -226,7 +226,7 @@ function resetConfig() {
     backup_vmid: '',
     backup_mode: 'snapshot',
     compress_mode: 'zstd',
-    auto_delete_after_download: false,
+    auto_delete_after_download: true,
     download_all_backups: false,
     enable_restore: false,
     restore_force: false,
@@ -969,7 +969,7 @@ return (_ctx, _cache) => {
         }, [
           _createElementVNode("div", _hoisted_10, [
             (_openBlock(), _createElementBlock("svg", _hoisted_11, [
-              _cache[53] || (_cache[53] = _createStaticVNode("<defs data-v-f2e0c5c6><radialGradient id=\"crystal-gradient\" cx=\"50%\" cy=\"50%\" r=\"50%\" data-v-f2e0c5c6><stop offset=\"0%\" stop-color=\"#fff\" stop-opacity=\"0.95\" data-v-f2e0c5c6></stop><stop offset=\"60%\" stop-color=\"#b2ebf2\" stop-opacity=\"0.7\" data-v-f2e0c5c6></stop><stop offset=\"100%\" stop-color=\"#00eaff\" stop-opacity=\"0.45\" data-v-f2e0c5c6></stop></radialGradient></defs><circle cx=\"50\" cy=\"50\" r=\"44\" fill=\"url(#crystal-gradient)\" data-v-f2e0c5c6></circle><ellipse cx=\"38\" cy=\"32\" rx=\"16\" ry=\"7\" fill=\"#fff\" opacity=\"0.35\" data-v-f2e0c5c6></ellipse>", 3)),
+              _cache[53] || (_cache[53] = _createStaticVNode("<defs data-v-735df811><radialGradient id=\"crystal-gradient\" cx=\"50%\" cy=\"50%\" r=\"50%\" data-v-735df811><stop offset=\"0%\" stop-color=\"#fff\" stop-opacity=\"0.95\" data-v-735df811></stop><stop offset=\"60%\" stop-color=\"#b2ebf2\" stop-opacity=\"0.7\" data-v-735df811></stop><stop offset=\"100%\" stop-color=\"#00eaff\" stop-opacity=\"0.45\" data-v-735df811></stop></radialGradient></defs><circle cx=\"50\" cy=\"50\" r=\"44\" fill=\"url(#crystal-gradient)\" data-v-735df811></circle><ellipse cx=\"38\" cy=\"32\" rx=\"16\" ry=\"7\" fill=\"#fff\" opacity=\"0.35\" data-v-735df811></ellipse>", 3)),
               _createElementVNode("g", null, [
                 (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(node.particleCount, (n) => {
                   return (_openBlock(), _createElementBlock("circle", {
@@ -1444,10 +1444,10 @@ return (_ctx, _cache) => {
                 : _createCommentVNode("", true),
       _createElementVNode("div", _hoisted_22, [
         _createVNode(_component_v_btn, {
-          color: "primary",
-          onClick: _cache[42] || (_cache[42] = $event => (emit('switch'))),
+          class: "glow-btn glow-btn-blue",
+          size: "small",
           "prepend-icon": "mdi-view-dashboard",
-          class: "glow-btn"
+          onClick: _cache[42] || (_cache[42] = $event => (emit('switch')))
         }, {
           default: _withCtx(() => _cache[54] || (_cache[54] = [
             _createTextVNode("状态页")
@@ -1455,10 +1455,10 @@ return (_ctx, _cache) => {
           _: 1
         }),
         _createVNode(_component_v_btn, {
-          color: "secondary",
-          onClick: resetConfig,
+          class: "glow-btn glow-btn-orange",
+          size: "small",
           "prepend-icon": "mdi-restore",
-          class: "glow-btn"
+          onClick: resetConfig
         }, {
           default: _withCtx(() => _cache[55] || (_cache[55] = [
             _createTextVNode("重置")
@@ -1466,11 +1466,11 @@ return (_ctx, _cache) => {
           _: 1
         }),
         _createVNode(_component_v_btn, {
-          color: "primary",
-          loading: saving.value,
-          onClick: saveConfig,
+          class: "glow-btn glow-btn-green",
+          size: "small",
           "prepend-icon": "mdi-content-save",
-          class: "glow-btn"
+          loading: saving.value,
+          onClick: saveConfig
         }, {
           default: _withCtx(() => _cache[56] || (_cache[56] = [
             _createTextVNode("保存")
@@ -1478,10 +1478,10 @@ return (_ctx, _cache) => {
           _: 1
         }, 8, ["loading"]),
         _createVNode(_component_v_btn, {
-          color: "grey",
-          onClick: _cache[43] || (_cache[43] = $event => (emit('close'))),
+          class: "glow-btn glow-btn-pink",
+          size: "small",
           "prepend-icon": "mdi-close",
-          class: "glow-btn"
+          onClick: _cache[43] || (_cache[43] = $event => (emit('close')))
         }, {
           default: _withCtx(() => _cache[57] || (_cache[57] = [
             _createTextVNode("关闭")
@@ -1518,6 +1518,6 @@ return (_ctx, _cache) => {
 }
 
 };
-const ConfigComponent = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-f2e0c5c6"]]);
+const ConfigComponent = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-735df811"]]);
 
 export { ConfigComponent as default };

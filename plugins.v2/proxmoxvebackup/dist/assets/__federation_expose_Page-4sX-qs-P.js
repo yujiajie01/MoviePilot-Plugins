@@ -3753,7 +3753,7 @@ var duration$1 = {exports: {}};
 var durationExports = duration$1.exports;
 const duration = /*@__PURE__*/getDefaultExportFromCjs(durationExports);
 
-const {createTextVNode:_createTextVNode,resolveComponent:_resolveComponent,withCtx:_withCtx,createVNode:_createVNode,createElementVNode:_createElementVNode,toDisplayString:_toDisplayString,normalizeClass:_normalizeClass,openBlock:_openBlock,createElementBlock:_createElementBlock,createCommentVNode:_createCommentVNode,renderList:_renderList,Fragment:_Fragment,mergeProps:_mergeProps,createBlock:_createBlock,normalizeStyle:_normalizeStyle} = await importShared('vue');
+const {createTextVNode:_createTextVNode,resolveComponent:_resolveComponent,withCtx:_withCtx,createVNode:_createVNode,createElementVNode:_createElementVNode,openBlock:_openBlock,createBlock:_createBlock,createCommentVNode:_createCommentVNode,toDisplayString:_toDisplayString,normalizeClass:_normalizeClass,createElementBlock:_createElementBlock,renderList:_renderList,Fragment:_Fragment,normalizeStyle:_normalizeStyle,mergeProps:_mergeProps} = await importShared('vue');
 
 
 const _hoisted_1 = { class: "host-action-btns" };
@@ -3769,42 +3769,53 @@ const _hoisted_7 = { class: "mr-4" };
 const _hoisted_8 = { class: "mr-4" };
 const _hoisted_9 = { class: "mr-4" };
 const _hoisted_10 = { key: 0 };
-const _hoisted_11 = { key: 1 };
-const _hoisted_12 = { class: "d-flex align-center mb-1" };
+const _hoisted_11 = { key: 0 };
+const _hoisted_12 = ["innerHTML"];
 const _hoisted_13 = {
+  class: "d-flex justify-end align-center",
+  style: {"gap":"4px"}
+};
+const _hoisted_14 = { key: 1 };
+const _hoisted_15 = { class: "d-flex align-center mb-1" };
+const _hoisted_16 = {
   class: "font-weight-bold",
   style: {"font-size":"1.1em"}
 };
-const _hoisted_14 = {
+const _hoisted_17 = {
   class: "d-flex align-center mb-1",
   style: {"font-size":"0.95em","color":"#90caf9"}
 };
-const _hoisted_15 = {
+const _hoisted_18 = {
+  class: "d-flex align-center mb-1",
+  style: {"font-size":"0.95em"}
+};
+const _hoisted_19 = ["innerHTML"];
+const _hoisted_20 = {
   class: "mobile-actions d-flex align-center",
   style: {"gap":"8px","flex-wrap":"wrap"}
 };
-const _hoisted_16 = { class: "mb-2" };
-const _hoisted_17 = {
+const _hoisted_21 = { class: "mb-2" };
+const _hoisted_22 = {
   class: "font-weight-bold",
   style: {"color":"#d32f2f"}
 };
-const _hoisted_18 = { key: 0 };
-const _hoisted_19 = { class: "grey--text text--darken-1" };
-const _hoisted_20 = {
+const _hoisted_23 = { key: 0 };
+const _hoisted_24 = { class: "grey--text text--darken-1" };
+const _hoisted_25 = {
   class: "d-flex align-center",
   style: {"gap":"4px"}
 };
-const _hoisted_21 = { style: {"font-size":"1.6rem","margin-right":"8px"} };
-const _hoisted_22 = { style: {"font-size":"1.1rem","font-weight":"600","color":"#00eaff","margin-bottom":"8px"} };
-const _hoisted_23 = { style: {"margin-bottom":"8px","color":"#2196f3"} };
-const _hoisted_24 = { style: {"color":"#00eaff"} };
-const _hoisted_25 = { style: {"margin-top":"12px","color":"#ffb300","font-size":"1.05rem"} };
-const _hoisted_26 = { style: {"font-size":"1.1em"} };
-const _hoisted_27 = {
+const _hoisted_26 = { style: {"font-size":"1.6rem","margin-right":"8px"} };
+const _hoisted_27 = { style: {"font-size":"1.1rem","font-weight":"600","color":"#00eaff","margin-bottom":"8px"} };
+const _hoisted_28 = { style: {"margin-bottom":"8px","color":"#2196f3"} };
+const _hoisted_29 = { style: {"color":"#00eaff"} };
+const _hoisted_30 = { style: {"margin-top":"12px","color":"#ffb300","font-size":"1.05rem"} };
+const _hoisted_31 = { style: {"font-size":"1.1em"} };
+const _hoisted_32 = {
   key: 0,
   style: {"color":"#d32f2f"}
 };
-const _hoisted_28 = {
+const _hoisted_33 = {
   key: 1,
   style: {"color":"#1976d2"}
 };
@@ -3818,6 +3829,29 @@ const _sfc_main = {
   setup(__props, { emit: __emit }) {
 
 dayjs.extend(duration);
+// PVE标签色数组（可根据实际PVE配色调整）
+const pveTagColors = [
+  '#e573b7', // 粉
+  '#bdb76b', // 黄褐
+  '#81c784', // 绿
+  '#ba68c8', // 紫
+  '#ffd54f', // 黄
+  '#64b5f6', // 蓝
+  '#4db6ac', // 青
+  '#f06292', // 粉2
+  '#9575cd', // 紫2
+  '#90caf9'  // 浅蓝
+];
+function getPveTagColor(tag) {
+  // 简单hash算法，将标签内容hash到颜色数组
+  let hash = 0;
+  for (let i = 0; i < tag.length; i++) {
+    hash = ((hash << 5) - hash) + tag.charCodeAt(i);
+    hash |= 0;
+  }
+  const idx = Math.abs(hash) % pveTagColors.length;
+  return pveTagColors[idx];
+}
 const props = __props;
 
 const status = ref({});
@@ -3845,21 +3879,11 @@ const containerStatus = ref([]);
 const loadingContainerStatus = ref(true);
 const containerHeaders = [
   { text: 'ID', value: 'vmid' },
-  { text: '名称', value: 'name' },
+  { text: '名称', value: 'displayName' },
   { text: '类型', value: 'type' },
   { text: '状态', value: 'status' },
-  { text: '锁定', value: 'lock' },
+  { text: '标签', value: 'tags' },
   { text: '运行时间', value: 'uptime' },
-  { text: 'CPU', value: 'cpu' },
-  { text: '内存', value: 'mem' },
-  { text: '最大内存', value: 'maxmem' },
-  { text: 'SWAP', value: 'swap' },
-  { text: '最大SWAP', value: 'maxswap' },
-  { text: '磁盘', value: 'disk' },
-  { text: '最大磁盘', value: 'maxdisk' },
-  { text: 'PID', value: 'pid' },
-  { text: '网络流入', value: 'netin' },
-  { text: '网络流出', value: 'netout' },
   { text: '操作', value: 'actions', sortable: false },
 ];
 const showBackupFilesDialog = ref(false);
@@ -3941,6 +3965,7 @@ async function fetchContainerStatus() {
   try {
     const data = await props.api.get('plugin/ProxmoxVEBackup/container_status');
     containerStatus.value = data;
+    console.log('containerStatus:', data[0]);
     localStorage.setItem('containerStatus', JSON.stringify(data));
   } catch (e) {
     containerStatus.value = [{ error: e?.message || '获取失败' }];
@@ -4324,6 +4349,20 @@ async function handleVmSnapshot(item) {
   item._actionLoading = null;
 }
 
+function formatUptime(uptime) {
+  const sec = Number(uptime);
+  if (!sec || isNaN(sec) || sec <= 0) return '<span style="color:#888;">未运行</span>';
+  if (sec < 60) return '<span style="color:#4caf50;font-weight:600;">刚启动</span>';
+  const days = Math.floor(sec / 86400);
+  const hours = Math.floor((sec % 86400) / 3600);
+  const mins = Math.floor((sec % 3600) / 60);
+  let parts = [];
+  if (days > 0) parts.push(days + '天');
+  if (hours > 0) parts.push(hours + '小时');
+  if (mins > 0) parts.push(mins + '分');
+  return `<span style="color:#4caf50;font-weight:600;">运行${parts.join('')}</span>`;
+}
+
 const isMobile = ref(false);
 onMounted(() => {
   const check = () => isMobile.value = window.innerWidth < 600;
@@ -4362,9 +4401,9 @@ const doHostAction = async () => {
 
 return (_ctx, _cache) => {
   const _component_v_icon = _resolveComponent("v-icon");
-  const _component_v_card_title = _resolveComponent("v-card-title");
   const _component_v_spacer = _resolveComponent("v-spacer");
   const _component_v_btn = _resolveComponent("v-btn");
+  const _component_v_card_title = _resolveComponent("v-card-title");
   const _component_v_chip = _resolveComponent("v-chip");
   const _component_v_card_text = _resolveComponent("v-card-text");
   const _component_v_card = _resolveComponent("v-card");
@@ -4400,12 +4439,35 @@ return (_ctx, _cache) => {
               color: "primary",
               size: "26"
             }, {
-              default: _withCtx(() => _cache[24] || (_cache[24] = [
+              default: _withCtx(() => _cache[25] || (_cache[25] = [
                 _createTextVNode("mdi-server")
               ])),
               _: 1
             }),
-            _cache[25] || (_cache[25] = _createElementVNode("span", { style: {"font-size":"1.15rem","font-weight":"600","letter-spacing":"1px"} }, "PVE虚拟机守护神", -1))
+            _cache[27] || (_cache[27] = _createElementVNode("span", { style: {"font-size":"1.15rem","font-weight":"600","letter-spacing":"1px"} }, "PVE虚拟机守护神", -1)),
+            _createVNode(_component_v_spacer),
+            (isMobile.value)
+              ? (_openBlock(), _createBlock(_component_v_btn, {
+                  key: 0,
+                  icon: "",
+                  class: "close-btn",
+                  onClick: _cache[0] || (_cache[0] = $event => (_ctx.$emit('close'))),
+                  style: {"margin-left":"auto","background":"transparent","box-shadow":"none","min-width":"unset","width":"auto","height":"auto"}
+                }, {
+                  default: _withCtx(() => [
+                    _createVNode(_component_v_icon, {
+                      size: "28",
+                      style: {"color":"#999"}
+                    }, {
+                      default: _withCtx(() => _cache[26] || (_cache[26] = [
+                        _createTextVNode("mdi-close")
+                      ])),
+                      _: 1
+                    })
+                  ]),
+                  _: 1
+                }))
+              : _createCommentVNode("", true)
           ]),
           _: 1
         }),
@@ -4433,7 +4495,7 @@ return (_ctx, _cache) => {
                           color: status.value.enabled ? 'success' : 'grey',
                           class: "mr-2"
                         }, null, 8, ["color"]),
-                        _cache[27] || (_cache[27] = _createElementVNode("span", null, "插件状态", -1)),
+                        _cache[29] || (_cache[29] = _createElementVNode("span", null, "插件状态", -1)),
                         _createVNode(_component_v_spacer),
                         _createVNode(_component_v_btn, {
                           icon: "",
@@ -4443,7 +4505,7 @@ return (_ctx, _cache) => {
                         }, {
                           default: _withCtx(() => [
                             _createVNode(_component_v_icon, null, {
-                              default: _withCtx(() => _cache[26] || (_cache[26] = [
+                              default: _withCtx(() => _cache[28] || (_cache[28] = [
                                 _createTextVNode("mdi-stethoscope")
                               ])),
                               _: 1
@@ -4457,7 +4519,7 @@ return (_ctx, _cache) => {
                     _createVNode(_component_v_card_text, { class: "px-3 py-2" }, {
                       default: _withCtx(() => [
                         _createElementVNode("div", null, [
-                          _cache[28] || (_cache[28] = _createTextVNode("插件状态：")),
+                          _cache[30] || (_cache[30] = _createTextVNode("插件状态：")),
                           _createVNode(_component_v_chip, {
                             color: status.value.enabled ? 'success' : 'grey',
                             size: "x-small"
@@ -4471,13 +4533,13 @@ return (_ctx, _cache) => {
                         _createElementVNode("div", null, "CRON表达式：" + _toDisplayString(cronDescription.value), 1),
                         _createElementVNode("div", null, "下次运行 " + _toDisplayString(nextRunCountdown.value), 1),
                         _createElementVNode("div", null, [
-                          _cache[29] || (_cache[29] = _createTextVNode("备份状态：")),
+                          _cache[31] || (_cache[31] = _createTextVNode("备份状态：")),
                           _createElementVNode("span", {
                             class: _normalizeClass(status.value.backup_activity === '空闲' ? 'text-success' : 'text-warning')
                           }, _toDisplayString(status.value.backup_activity || '-'), 3)
                         ]),
                         _createElementVNode("div", null, [
-                          _cache[30] || (_cache[30] = _createTextVNode("恢复状态：")),
+                          _cache[32] || (_cache[32] = _createTextVNode("恢复状态：")),
                           _createElementVNode("span", {
                             class: _normalizeClass(status.value.restore_activity === '空闲' ? 'text-success' : 'text-warning')
                           }, _toDisplayString(status.value.restore_activity || '-'), 3)
@@ -4509,18 +4571,18 @@ return (_ctx, _cache) => {
                           class: "mr-2",
                           color: "primary"
                         }),
-                        _cache[34] || (_cache[34] = _createElementVNode("span", null, "PVE主机状态", -1)),
+                        _cache[36] || (_cache[36] = _createElementVNode("span", null, "PVE主机状态", -1)),
                         _createVNode(_component_v_spacer),
                         _createElementVNode("div", _hoisted_1, [
                           _createVNode(_component_v_btn, {
                             icon: "",
                             class: "glow-btn",
                             loading: hostActionLoading.value === 'reboot',
-                            onClick: _cache[0] || (_cache[0] = $event => (handleHostActionClick('reboot')))
+                            onClick: _cache[1] || (_cache[1] = $event => (handleHostActionClick('reboot')))
                           }, {
                             default: _withCtx(() => [
                               _createVNode(_component_v_icon, { size: "28" }, {
-                                default: _withCtx(() => _cache[31] || (_cache[31] = [
+                                default: _withCtx(() => _cache[33] || (_cache[33] = [
                                   _createTextVNode("mdi-restart")
                                 ])),
                                 _: 1
@@ -4532,11 +4594,11 @@ return (_ctx, _cache) => {
                             icon: "",
                             class: "glow-btn",
                             loading: hostActionLoading.value === 'shutdown',
-                            onClick: _cache[1] || (_cache[1] = $event => (handleHostActionClick('shutdown')))
+                            onClick: _cache[2] || (_cache[2] = $event => (handleHostActionClick('shutdown')))
                           }, {
                             default: _withCtx(() => [
                               _createVNode(_component_v_icon, { size: "28" }, {
-                                default: _withCtx(() => _cache[32] || (_cache[32] = [
+                                default: _withCtx(() => _cache[34] || (_cache[34] = [
                                   _createTextVNode("mdi-power")
                                 ])),
                                 _: 1
@@ -4551,7 +4613,7 @@ return (_ctx, _cache) => {
                           }, {
                             default: _withCtx(() => [
                               _createVNode(_component_v_icon, { size: "28" }, {
-                                default: _withCtx(() => _cache[33] || (_cache[33] = [
+                                default: _withCtx(() => _cache[35] || (_cache[35] = [
                                   _createTextVNode("mdi-refresh")
                                 ])),
                                 _: 1
@@ -4613,7 +4675,7 @@ return (_ctx, _cache) => {
                           class: "mr-2",
                           color: "primary"
                         }),
-                        _cache[35] || (_cache[35] = _createElementVNode("span", null, "容器状态", -1)),
+                        _cache[37] || (_cache[37] = _createElementVNode("span", null, "容器状态", -1)),
                         _createVNode(_component_v_spacer),
                         _createVNode(_component_v_btn, {
                           icon: "",
@@ -4632,19 +4694,19 @@ return (_ctx, _cache) => {
                       default: _withCtx(() => [
                         _createElementVNode("div", _hoisted_5, [
                           _createElementVNode("span", _hoisted_6, [
-                            _cache[36] || (_cache[36] = _createTextVNode("容器总数：")),
+                            _cache[38] || (_cache[38] = _createTextVNode("容器总数：")),
                             _createElementVNode("b", null, _toDisplayString(containerStatus.value.length), 1)
                           ]),
                           _createElementVNode("span", _hoisted_7, [
-                            _cache[37] || (_cache[37] = _createTextVNode("运行中：")),
+                            _cache[39] || (_cache[39] = _createTextVNode("运行中：")),
                             _createElementVNode("b", null, _toDisplayString(containerStatus.value.filter(c => c.status === 'running').length), 1)
                           ]),
                           _createElementVNode("span", _hoisted_8, [
-                            _cache[38] || (_cache[38] = _createTextVNode("主机名：")),
+                            _cache[40] || (_cache[40] = _createTextVNode("主机名：")),
                             _createElementVNode("b", null, _toDisplayString(pveStatus.value.hostname || '-'), 1)
                           ]),
                           _createElementVNode("span", _hoisted_9, [
-                            _cache[39] || (_cache[39] = _createTextVNode("PVE主机IP：")),
+                            _cache[41] || (_cache[41] = _createTextVNode("PVE主机IP：")),
                             _createElementVNode("b", null, _toDisplayString(pveStatus.value.ip || '-'), 1)
                           ])
                         ]),
@@ -4679,69 +4741,93 @@ return (_ctx, _cache) => {
                                     _: 2
                                   }, 1032, ["color"])
                                 ]),
+                                "item.tags": _withCtx(({ item }) => [
+                                  (!item.tags || !item.tags.trim())
+                                    ? (_openBlock(), _createElementBlock("span", _hoisted_11, "-"))
+                                    : (_openBlock(true), _createElementBlock(_Fragment, { key: 1 }, _renderList(item.tags.split(/[,;]+/).map(t => t.trim()).filter(Boolean), (tag) => {
+                                        return (_openBlock(), _createBlock(_component_v_chip, {
+                                          key: tag,
+                                          size: "x-small",
+                                          style: _normalizeStyle({ backgroundColor: getPveTagColor(tag), color: '#fff', fontWeight: 600 }),
+                                          class: "mr-1"
+                                        }, {
+                                          default: _withCtx(() => [
+                                            _createTextVNode(_toDisplayString(tag), 1)
+                                          ]),
+                                          _: 2
+                                        }, 1032, ["style"]))
+                                      }), 128))
+                                ]),
+                                "item.uptime": _withCtx(({ item }) => [
+                                  _createElementVNode("span", {
+                                    innerHTML: formatUptime(item.uptime)
+                                  }, null, 8, _hoisted_12)
+                                ]),
                                 "item.actions": _withCtx(({ item }) => [
-                                  _createVNode(_component_v_btn, {
-                                    size: "x-small",
-                                    color: "success",
-                                    loading: item._actionLoading === 'start',
-                                    disabled: item.status === 'running',
-                                    onClick: $event => (handleVmAction(item, 'start')),
-                                    class: "mr-1"
-                                  }, {
-                                    default: _withCtx(() => _cache[40] || (_cache[40] = [
-                                      _createTextVNode("启动")
-                                    ])),
-                                    _: 2
-                                  }, 1032, ["loading", "disabled", "onClick"]),
-                                  _createVNode(_component_v_btn, {
-                                    size: "x-small",
-                                    color: "error",
-                                    loading: item._actionLoading === 'stop',
-                                    disabled: item.status !== 'running',
-                                    onClick: $event => (handleVmAction(item, 'stop')),
-                                    class: "mr-1"
-                                  }, {
-                                    default: _withCtx(() => _cache[41] || (_cache[41] = [
-                                      _createTextVNode("关闭")
-                                    ])),
-                                    _: 2
-                                  }, 1032, ["loading", "disabled", "onClick"]),
-                                  _createVNode(_component_v_btn, {
-                                    size: "x-small",
-                                    color: "info",
-                                    loading: item._actionLoading === 'reboot',
-                                    disabled: item.status !== 'running',
-                                    onClick: $event => (handleVmAction(item, 'reboot')),
-                                    class: "mr-1"
-                                  }, {
-                                    default: _withCtx(() => _cache[42] || (_cache[42] = [
-                                      _createTextVNode("重启")
-                                    ])),
-                                    _: 2
-                                  }, 1032, ["loading", "disabled", "onClick"]),
-                                  _createVNode(_component_v_btn, {
-                                    size: "x-small",
-                                    color: "primary",
-                                    loading: item._actionLoading === 'snapshot',
-                                    onClick: $event => (handleVmSnapshot(item))
-                                  }, {
-                                    default: _withCtx(() => _cache[43] || (_cache[43] = [
-                                      _createTextVNode("创建快照")
-                                    ])),
-                                    _: 2
-                                  }, 1032, ["loading", "onClick"])
+                                  _createElementVNode("div", _hoisted_13, [
+                                    _createVNode(_component_v_btn, {
+                                      size: "x-small",
+                                      color: "success",
+                                      loading: item._actionLoading === 'start',
+                                      disabled: item.status === 'running',
+                                      onClick: $event => (handleVmAction(item, 'start')),
+                                      class: "mr-1"
+                                    }, {
+                                      default: _withCtx(() => _cache[42] || (_cache[42] = [
+                                        _createTextVNode("启动")
+                                      ])),
+                                      _: 2
+                                    }, 1032, ["loading", "disabled", "onClick"]),
+                                    _createVNode(_component_v_btn, {
+                                      size: "x-small",
+                                      color: "error",
+                                      loading: item._actionLoading === 'stop',
+                                      disabled: item.status !== 'running',
+                                      onClick: $event => (handleVmAction(item, 'stop')),
+                                      class: "mr-1"
+                                    }, {
+                                      default: _withCtx(() => _cache[43] || (_cache[43] = [
+                                        _createTextVNode("关闭")
+                                      ])),
+                                      _: 2
+                                    }, 1032, ["loading", "disabled", "onClick"]),
+                                    _createVNode(_component_v_btn, {
+                                      size: "x-small",
+                                      color: "info",
+                                      loading: item._actionLoading === 'reboot',
+                                      disabled: item.status !== 'running',
+                                      onClick: $event => (handleVmAction(item, 'reboot')),
+                                      class: "mr-1"
+                                    }, {
+                                      default: _withCtx(() => _cache[44] || (_cache[44] = [
+                                        _createTextVNode("重启")
+                                      ])),
+                                      _: 2
+                                    }, 1032, ["loading", "disabled", "onClick"]),
+                                    _createVNode(_component_v_btn, {
+                                      size: "x-small",
+                                      color: "primary",
+                                      loading: item._actionLoading === 'snapshot',
+                                      onClick: $event => (handleVmSnapshot(item))
+                                    }, {
+                                      default: _withCtx(() => _cache[45] || (_cache[45] = [
+                                        _createTextVNode("创建快照")
+                                      ])),
+                                      _: 2
+                                    }, 1032, ["loading", "onClick"])
+                                  ])
                                 ]),
                                 _: 1
                               }, 8, ["items"])
                             ]))
-                          : (_openBlock(), _createElementBlock("div", _hoisted_11, [
+                          : (_openBlock(), _createElementBlock("div", _hoisted_14, [
                               (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(containerStatus.value, (item) => {
                                 return (_openBlock(), _createElementBlock("div", {
                                   key: item.vmid,
                                   class: "mobile-card"
                                 }, [
-                                  _createElementVNode("div", _hoisted_12, [
-                                    _createElementVNode("span", _hoisted_13, _toDisplayString(item.name || '-'), 1),
+                                  _createElementVNode("div", _hoisted_15, [
+                                    _createElementVNode("span", _hoisted_16, _toDisplayString(item.displayName || item.description || item.hostname || item.name || '-'), 1),
                                     _createVNode(_component_v_chip, {
                                       size: "x-small",
                                       color: item.type === 'qemu' ? 'primary' : 'info',
@@ -4763,10 +4849,25 @@ return (_ctx, _cache) => {
                                       _: 2
                                     }, 1032, ["color"])
                                   ]),
-                                  _createElementVNode("div", _hoisted_14, [
+                                  _createElementVNode("div", _hoisted_17, [
                                     _createElementVNode("span", null, "ID: " + _toDisplayString(item.vmid), 1)
                                   ]),
-                                  _createElementVNode("div", _hoisted_15, [
+                                  _createElementVNode("div", _hoisted_18, [
+                                    _createVNode(_component_v_icon, {
+                                      size: "18",
+                                      color: "success",
+                                      class: "mr-1"
+                                    }, {
+                                      default: _withCtx(() => _cache[46] || (_cache[46] = [
+                                        _createTextVNode("mdi-timer-outline")
+                                      ])),
+                                      _: 1
+                                    }),
+                                    _createElementVNode("span", {
+                                      innerHTML: formatUptime(item.uptime)
+                                    }, null, 8, _hoisted_19)
+                                  ]),
+                                  _createElementVNode("div", _hoisted_20, [
                                     _createVNode(_component_v_btn, {
                                       size: "small",
                                       color: "success",
@@ -4774,7 +4875,7 @@ return (_ctx, _cache) => {
                                       disabled: item.status === 'running',
                                       onClick: $event => (handleVmAction(item, 'start'))
                                     }, {
-                                      default: _withCtx(() => _cache[44] || (_cache[44] = [
+                                      default: _withCtx(() => _cache[47] || (_cache[47] = [
                                         _createTextVNode("启动")
                                       ])),
                                       _: 2
@@ -4786,7 +4887,7 @@ return (_ctx, _cache) => {
                                       disabled: item.status !== 'running',
                                       onClick: $event => (handleVmAction(item, 'stop'))
                                     }, {
-                                      default: _withCtx(() => _cache[45] || (_cache[45] = [
+                                      default: _withCtx(() => _cache[48] || (_cache[48] = [
                                         _createTextVNode("关闭")
                                       ])),
                                       _: 2
@@ -4798,7 +4899,7 @@ return (_ctx, _cache) => {
                                       disabled: item.status !== 'running',
                                       onClick: $event => (handleVmAction(item, 'reboot'))
                                     }, {
-                                      default: _withCtx(() => _cache[46] || (_cache[46] = [
+                                      default: _withCtx(() => _cache[49] || (_cache[49] = [
                                         _createTextVNode("重启")
                                       ])),
                                       _: 2
@@ -4809,7 +4910,7 @@ return (_ctx, _cache) => {
                                       loading: item._actionLoading === 'snapshot',
                                       onClick: $event => (handleVmSnapshot(item))
                                     }, {
-                                      default: _withCtx(() => _cache[47] || (_cache[47] = [
+                                      default: _withCtx(() => _cache[50] || (_cache[50] = [
                                         _createTextVNode("快照")
                                       ])),
                                       _: 2
@@ -4832,14 +4933,14 @@ return (_ctx, _cache) => {
         }),
         _createVNode(_component_v_dialog, {
           modelValue: showRestoreDialog.value,
-          "onUpdate:modelValue": _cache[8] || (_cache[8] = $event => ((showRestoreDialog).value = $event)),
+          "onUpdate:modelValue": _cache[9] || (_cache[9] = $event => ((showRestoreDialog).value = $event)),
           "max-width": "500"
         }, {
           default: _withCtx(() => [
             _createVNode(_component_v_card, null, {
               default: _withCtx(() => [
                 _createVNode(_component_v_card_title, null, {
-                  default: _withCtx(() => _cache[48] || (_cache[48] = [
+                  default: _withCtx(() => _cache[51] || (_cache[51] = [
                     _createTextVNode("选择要恢复的备份文件")
                   ])),
                   _: 1
@@ -4848,7 +4949,7 @@ return (_ctx, _cache) => {
                   default: _withCtx(() => [
                     _createVNode(_component_v_select, {
                       modelValue: selectedRestoreFile.value,
-                      "onUpdate:modelValue": _cache[2] || (_cache[2] = $event => ((selectedRestoreFile).value = $event)),
+                      "onUpdate:modelValue": _cache[3] || (_cache[3] = $event => ((selectedRestoreFile).value = $event)),
                       items: backupFiles.value,
                       "item-title": item => item.filename + ' (' + item.source + ')',
                       "item-value": "filename",
@@ -4856,23 +4957,23 @@ return (_ctx, _cache) => {
                     }, null, 8, ["modelValue", "items", "item-title"]),
                     _createVNode(_component_v_text_field, {
                       modelValue: restoreDisk.value,
-                      "onUpdate:modelValue": _cache[3] || (_cache[3] = $event => ((restoreDisk).value = $event)),
+                      "onUpdate:modelValue": _cache[4] || (_cache[4] = $event => ((restoreDisk).value = $event)),
                       label: "恢复存储硬盘",
                       placeholder: "请输入存储池"
                     }, null, 8, ["modelValue"]),
                     _createVNode(_component_v_text_field, {
                       modelValue: restoreVmid.value,
-                      "onUpdate:modelValue": _cache[4] || (_cache[4] = $event => ((restoreVmid).value = $event)),
+                      "onUpdate:modelValue": _cache[5] || (_cache[5] = $event => ((restoreVmid).value = $event)),
                       label: "目标VMID(可选)"
                     }, null, 8, ["modelValue"]),
                     _createVNode(_component_v_switch, {
                       modelValue: restoreForce.value,
-                      "onUpdate:modelValue": _cache[5] || (_cache[5] = $event => ((restoreForce).value = $event)),
+                      "onUpdate:modelValue": _cache[6] || (_cache[6] = $event => ((restoreForce).value = $event)),
                       label: "强制恢复(覆盖现有VM)"
                     }, null, 8, ["modelValue"]),
                     _createVNode(_component_v_switch, {
                       modelValue: restoreSkipExisting.value,
-                      "onUpdate:modelValue": _cache[6] || (_cache[6] = $event => ((restoreSkipExisting).value = $event)),
+                      "onUpdate:modelValue": _cache[7] || (_cache[7] = $event => ((restoreSkipExisting).value = $event)),
                       label: "跳过已存在的VM"
                     }, null, 8, ["modelValue"])
                   ]),
@@ -4882,9 +4983,9 @@ return (_ctx, _cache) => {
                   default: _withCtx(() => [
                     _createVNode(_component_v_btn, {
                       color: "grey",
-                      onClick: _cache[7] || (_cache[7] = $event => (showRestoreDialog.value = false))
+                      onClick: _cache[8] || (_cache[8] = $event => (showRestoreDialog.value = false))
                     }, {
-                      default: _withCtx(() => _cache[49] || (_cache[49] = [
+                      default: _withCtx(() => _cache[52] || (_cache[52] = [
                         _createTextVNode("取消")
                       ])),
                       _: 1
@@ -4895,7 +4996,7 @@ return (_ctx, _cache) => {
                       onClick: runRestore,
                       disabled: !selectedRestoreFile.value
                     }, {
-                      default: _withCtx(() => _cache[50] || (_cache[50] = [
+                      default: _withCtx(() => _cache[53] || (_cache[53] = [
                         _createTextVNode("确认恢复")
                       ])),
                       _: 1
@@ -4911,7 +5012,7 @@ return (_ctx, _cache) => {
         }, 8, ["modelValue"]),
         _createVNode(_component_v_snackbar, {
           modelValue: snackbar.value.show,
-          "onUpdate:modelValue": _cache[9] || (_cache[9] = $event => ((snackbar.value.show) = $event)),
+          "onUpdate:modelValue": _cache[10] || (_cache[10] = $event => ((snackbar.value.show) = $event)),
           color: snackbar.value.color,
           timeout: snackbar.value.timeout
         }, {
@@ -4922,27 +5023,27 @@ return (_ctx, _cache) => {
         }, 8, ["modelValue", "color", "timeout"]),
         _createVNode(_component_v_dialog, {
           modelValue: showDeleteDialog.value,
-          "onUpdate:modelValue": _cache[11] || (_cache[11] = $event => ((showDeleteDialog).value = $event)),
+          "onUpdate:modelValue": _cache[12] || (_cache[12] = $event => ((showDeleteDialog).value = $event)),
           "max-width": "420"
         }, {
           default: _withCtx(() => [
             _createVNode(_component_v_card, null, {
               default: _withCtx(() => [
                 _createVNode(_component_v_card_title, { class: "text-h6" }, {
-                  default: _withCtx(() => _cache[51] || (_cache[51] = [
+                  default: _withCtx(() => _cache[54] || (_cache[54] = [
                     _createTextVNode("删除确认")
                   ])),
                   _: 1
                 }),
                 _createVNode(_component_v_card_text, null, {
                   default: _withCtx(() => [
-                    _createElementVNode("div", _hoisted_16, [
-                      _cache[52] || (_cache[52] = _createTextVNode(" 确定要删除备份文件 ")),
-                      _createElementVNode("span", _hoisted_17, _toDisplayString(deleteTarget.value?.filename), 1),
-                      _cache[53] || (_cache[53] = _createTextVNode(" 吗？ "))
+                    _createElementVNode("div", _hoisted_21, [
+                      _cache[55] || (_cache[55] = _createTextVNode(" 确定要删除备份文件 ")),
+                      _createElementVNode("span", _hoisted_22, _toDisplayString(deleteTarget.value?.filename), 1),
+                      _cache[56] || (_cache[56] = _createTextVNode(" 吗？ "))
                     ]),
                     (deleteTarget.value)
-                      ? (_openBlock(), _createElementBlock("div", _hoisted_18, [
+                      ? (_openBlock(), _createElementBlock("div", _hoisted_23, [
                           _createVNode(_component_v_chip, {
                             size: "small",
                             color: "primary",
@@ -4953,7 +5054,7 @@ return (_ctx, _cache) => {
                             ]),
                             _: 1
                           }),
-                          _createElementVNode("span", _hoisted_19, _toDisplayString(deleteTarget.value.size_mb ? (deleteTarget.value.size_mb.toFixed(2) + ' MB') : '-'), 1)
+                          _createElementVNode("span", _hoisted_24, _toDisplayString(deleteTarget.value.size_mb ? (deleteTarget.value.size_mb.toFixed(2) + ' MB') : '-'), 1)
                         ]))
                       : _createCommentVNode("", true)
                   ]),
@@ -4965,10 +5066,10 @@ return (_ctx, _cache) => {
                     _createVNode(_component_v_btn, {
                       text: "",
                       color: "grey",
-                      onClick: _cache[10] || (_cache[10] = $event => (showDeleteDialog.value = false)),
+                      onClick: _cache[11] || (_cache[11] = $event => (showDeleteDialog.value = false)),
                       disabled: deleteLoading.value
                     }, {
-                      default: _withCtx(() => _cache[54] || (_cache[54] = [
+                      default: _withCtx(() => _cache[57] || (_cache[57] = [
                         _createTextVNode("取消")
                       ])),
                       _: 1
@@ -4978,7 +5079,7 @@ return (_ctx, _cache) => {
                       loading: deleteLoading.value === (deleteTarget.value?.filename + deleteTarget.value?.source),
                       onClick: handleDeleteConfirm
                     }, {
-                      default: _withCtx(() => _cache[55] || (_cache[55] = [
+                      default: _withCtx(() => _cache[58] || (_cache[58] = [
                         _createTextVNode(" 删除 ")
                       ])),
                       _: 1
@@ -4995,79 +5096,73 @@ return (_ctx, _cache) => {
         _createVNode(_component_v_card_actions, { class: "px-2 py-1 footer-btns" }, {
           default: _withCtx(() => [
             _createVNode(_component_v_btn, {
-              class: "glow-btn",
-              color: "primary",
+              class: "glow-btn glow-btn-blue",
               size: "small",
               "prepend-icon": "mdi-history",
-              onClick: _cache[12] || (_cache[12] = $event => (showHistoryDialog.value = true))
+              onClick: _cache[13] || (_cache[13] = $event => (showHistoryDialog.value = true))
             }, {
-              default: _withCtx(() => _cache[56] || (_cache[56] = [
+              default: _withCtx(() => _cache[59] || (_cache[59] = [
                 _createTextVNode("任务历史")
               ])),
               _: 1
             }),
             _createVNode(_component_v_btn, {
-              class: "glow-btn",
-              color: "info",
+              class: "glow-btn glow-btn-cyan",
               size: "small",
               "prepend-icon": "mdi-file-document-multiple",
               onClick: openBackupFilesDialog
             }, {
-              default: _withCtx(() => _cache[57] || (_cache[57] = [
+              default: _withCtx(() => _cache[60] || (_cache[60] = [
                 _createTextVNode("备份文件")
               ])),
               _: 1
             }),
             _createVNode(_component_v_spacer),
             _createVNode(_component_v_btn, {
-              class: "glow-btn",
-              color: "warning",
+              class: "glow-btn glow-btn-orange",
               size: "small",
               "prepend-icon": "mdi-broom",
               loading: loadingClear.value,
               onClick: clearHistory
             }, {
-              default: _withCtx(() => _cache[58] || (_cache[58] = [
+              default: _withCtx(() => _cache[61] || (_cache[61] = [
                 _createTextVNode("清理历史")
               ])),
               _: 1
             }, 8, ["loading"]),
             _createVNode(_component_v_btn, {
-              class: "glow-btn",
-              color: "info",
+              class: "glow-btn glow-btn-purple",
               size: "small",
               "prepend-icon": "mdi-restore",
               loading: loadingRestore.value,
               disabled: !status.value.enabled || !status.value.enable_restore,
-              onClick: _cache[13] || (_cache[13] = $event => (openRestoreDialog()))
+              onClick: _cache[14] || (_cache[14] = $event => (openRestoreDialog()))
             }, {
-              default: _withCtx(() => _cache[59] || (_cache[59] = [
+              default: _withCtx(() => _cache[62] || (_cache[62] = [
                 _createTextVNode("立即恢复")
               ])),
               _: 1
             }, 8, ["loading", "disabled"]),
             _createVNode(_component_v_btn, {
-              class: "glow-btn",
-              color: "success",
+              class: "glow-btn glow-btn-green",
               size: "small",
               "prepend-icon": "mdi-database-arrow-up",
               loading: loadingBackup.value,
               disabled: !status.value.enabled,
               onClick: runBackup
             }, {
-              default: _withCtx(() => _cache[60] || (_cache[60] = [
+              default: _withCtx(() => _cache[63] || (_cache[63] = [
                 _createTextVNode("立即备份")
               ])),
               _: 1
             }, 8, ["loading", "disabled"]),
             _createVNode(_component_v_btn, {
-              class: "glow-btn",
-              color: "primary",
+              class: "glow-btn glow-btn-pink",
               size: "small",
               "prepend-icon": "mdi-cog",
-              onClick: _cache[14] || (_cache[14] = $event => (_ctx.$emit('switch')))
+              onClick: _cache[15] || (_cache[15] = $event => (_ctx.$emit('switch')))
             }, {
-              default: _withCtx(() => _cache[61] || (_cache[61] = [
+              default: _withCtx(() => _cache[64] || (_cache[64] = [
                 _createTextVNode("配置")
               ])),
               _: 1
@@ -5077,14 +5172,14 @@ return (_ctx, _cache) => {
         }),
         _createVNode(_component_v_dialog, {
           modelValue: showHistoryDialog.value,
-          "onUpdate:modelValue": _cache[16] || (_cache[16] = $event => ((showHistoryDialog).value = $event)),
+          "onUpdate:modelValue": _cache[17] || (_cache[17] = $event => ((showHistoryDialog).value = $event)),
           "max-width": "900"
         }, {
           default: _withCtx(() => [
             _createVNode(_component_v_card, null, {
               default: _withCtx(() => [
                 _createVNode(_component_v_card_title, { class: "text-h6" }, {
-                  default: _withCtx(() => _cache[62] || (_cache[62] = [
+                  default: _withCtx(() => _cache[65] || (_cache[65] = [
                     _createTextVNode("任务历史")
                   ])),
                   _: 1
@@ -5140,9 +5235,9 @@ return (_ctx, _cache) => {
                     _createVNode(_component_v_spacer),
                     _createVNode(_component_v_btn, {
                       color: "primary",
-                      onClick: _cache[15] || (_cache[15] = $event => (showHistoryDialog.value = false))
+                      onClick: _cache[16] || (_cache[16] = $event => (showHistoryDialog.value = false))
                     }, {
-                      default: _withCtx(() => _cache[63] || (_cache[63] = [
+                      default: _withCtx(() => _cache[66] || (_cache[66] = [
                         _createTextVNode("关闭")
                       ])),
                       _: 1
@@ -5158,7 +5253,7 @@ return (_ctx, _cache) => {
         }, 8, ["modelValue"]),
         _createVNode(_component_v_dialog, {
           modelValue: showBackupFilesDialog.value,
-          "onUpdate:modelValue": _cache[18] || (_cache[18] = $event => ((showBackupFilesDialog).value = $event)),
+          "onUpdate:modelValue": _cache[19] || (_cache[19] = $event => ((showBackupFilesDialog).value = $event)),
           "max-width": "1400"
         }, {
           default: _withCtx(() => [
@@ -5168,7 +5263,7 @@ return (_ctx, _cache) => {
                   class: "text-h6",
                   style: {"padding":"8px 16px 0 16px","font-size":"18px"}
                 }, {
-                  default: _withCtx(() => _cache[64] || (_cache[64] = [
+                  default: _withCtx(() => _cache[67] || (_cache[67] = [
                     _createTextVNode("备份文件")
                   ])),
                   _: 1
@@ -5197,7 +5292,7 @@ return (_ctx, _cache) => {
                         _createTextVNode(_toDisplayString(item.time_str ? (item.time_str.split(' ')[1] || '-') : '-'), 1)
                       ]),
                       "item.actions": _withCtx(({ item }) => [
-                        _createElementVNode("div", _hoisted_20, [
+                        _createElementVNode("div", _hoisted_25, [
                           (!status.value.enabled)
                             ? (_openBlock(), _createBlock(_component_v_tooltip, {
                                 key: 0,
@@ -5304,9 +5399,9 @@ return (_ctx, _cache) => {
                     _createVNode(_component_v_spacer),
                     _createVNode(_component_v_btn, {
                       color: "primary",
-                      onClick: _cache[17] || (_cache[17] = $event => (showBackupFilesDialog.value = false))
+                      onClick: _cache[18] || (_cache[18] = $event => (showBackupFilesDialog.value = false))
                     }, {
-                      default: _withCtx(() => _cache[65] || (_cache[65] = [
+                      default: _withCtx(() => _cache[68] || (_cache[68] = [
                         _createTextVNode("关闭")
                       ])),
                       _: 1
@@ -5322,7 +5417,7 @@ return (_ctx, _cache) => {
         }, 8, ["modelValue"]),
         _createVNode(_component_v_dialog, {
           modelValue: showCheckupDialog.value,
-          "onUpdate:modelValue": _cache[21] || (_cache[21] = $event => ((showCheckupDialog).value = $event)),
+          "onUpdate:modelValue": _cache[22] || (_cache[22] = $event => ((showCheckupDialog).value = $event)),
           "max-width": "480"
         }, {
           default: _withCtx(() => [
@@ -5330,16 +5425,16 @@ return (_ctx, _cache) => {
               default: _withCtx(() => [
                 _createVNode(_component_v_card_title, { class: "d-flex align-center" }, {
                   default: _withCtx(() => [
-                    _createElementVNode("span", _hoisted_21, _toDisplayString(checkupReport.value.avatar), 1),
-                    _cache[67] || (_cache[67] = _createElementVNode("span", { style: {"font-size":"1.15rem","font-weight":"600"} }, "体检报告", -1)),
+                    _createElementVNode("span", _hoisted_26, _toDisplayString(checkupReport.value.avatar), 1),
+                    _cache[70] || (_cache[70] = _createElementVNode("span", { style: {"font-size":"1.15rem","font-weight":"600"} }, "体检报告", -1)),
                     _createVNode(_component_v_spacer),
                     _createVNode(_component_v_btn, {
                       icon: "",
-                      onClick: _cache[19] || (_cache[19] = $event => (showCheckupDialog.value=false))
+                      onClick: _cache[20] || (_cache[20] = $event => (showCheckupDialog.value=false))
                     }, {
                       default: _withCtx(() => [
                         _createVNode(_component_v_icon, null, {
-                          default: _withCtx(() => _cache[66] || (_cache[66] = [
+                          default: _withCtx(() => _cache[69] || (_cache[69] = [
                             _createTextVNode("mdi-close")
                           ])),
                           _: 1
@@ -5352,8 +5447,8 @@ return (_ctx, _cache) => {
                 }),
                 _createVNode(_component_v_card_text, null, {
                   default: _withCtx(() => [
-                    _createElementVNode("div", _hoisted_22, "总分：" + _toDisplayString(checkupReport.value.total || 0) + "/100", 1),
-                    _createElementVNode("div", _hoisted_23, _toDisplayString(checkupReport.value.comment), 1),
+                    _createElementVNode("div", _hoisted_27, "总分：" + _toDisplayString(checkupReport.value.total || 0) + "/100", 1),
+                    _createElementVNode("div", _hoisted_28, _toDisplayString(checkupReport.value.comment), 1),
                     _createVNode(_component_v_list, { dense: "" }, {
                       default: _withCtx(() => [
                         (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(checkupReport.value.items, (item) => {
@@ -5367,8 +5462,8 @@ return (_ctx, _cache) => {
                                     default: _withCtx(() => [
                                       _createTextVNode(_toDisplayString(item.label) + "：", 1),
                                       _createElementVNode("b", null, _toDisplayString(item.result), 1),
-                                      _cache[68] || (_cache[68] = _createTextVNode()),
-                                      _createElementVNode("span", _hoisted_24, "+" + _toDisplayString(item.score), 1)
+                                      _cache[71] || (_cache[71] = _createTextVNode()),
+                                      _createElementVNode("span", _hoisted_29, "+" + _toDisplayString(item.score), 1)
                                     ]),
                                     _: 2
                                   }, 1024),
@@ -5388,7 +5483,7 @@ return (_ctx, _cache) => {
                       ]),
                       _: 1
                     }),
-                    _createElementVNode("div", _hoisted_25, _toDisplayString(checkupReport.value.blessing), 1)
+                    _createElementVNode("div", _hoisted_30, _toDisplayString(checkupReport.value.blessing), 1)
                   ]),
                   _: 1
                 }),
@@ -5397,9 +5492,9 @@ return (_ctx, _cache) => {
                     _createVNode(_component_v_spacer),
                     _createVNode(_component_v_btn, {
                       color: "primary",
-                      onClick: _cache[20] || (_cache[20] = $event => (showCheckupDialog.value=false))
+                      onClick: _cache[21] || (_cache[21] = $event => (showCheckupDialog.value=false))
                     }, {
-                      default: _withCtx(() => _cache[69] || (_cache[69] = [
+                      default: _withCtx(() => _cache[72] || (_cache[72] = [
                         _createTextVNode("关闭")
                       ])),
                       _: 1
@@ -5418,7 +5513,7 @@ return (_ctx, _cache) => {
     }),
     _createVNode(_component_v_dialog, {
       modelValue: showHostActionDialog.value,
-      "onUpdate:modelValue": _cache[23] || (_cache[23] = $event => ((showHostActionDialog).value = $event)),
+      "onUpdate:modelValue": _cache[24] || (_cache[24] = $event => ((showHostActionDialog).value = $event)),
       "max-width": "400"
     }, {
       default: _withCtx(() => [
@@ -5445,14 +5540,14 @@ return (_ctx, _cache) => {
             }, 8, ["style"]),
             _createVNode(_component_v_card_text, null, {
               default: _withCtx(() => [
-                _createElementVNode("div", _hoisted_26, [
-                  _cache[70] || (_cache[70] = _createTextVNode(" 确定要")),
+                _createElementVNode("div", _hoisted_31, [
+                  _cache[73] || (_cache[73] = _createTextVNode(" 确定要")),
                   _createElementVNode("strong", null, _toDisplayString(pendingHostAction.value==='shutdown' ? '关机' : '重启'), 1),
-                  _cache[71] || (_cache[71] = _createTextVNode("当前PVE主机吗？")),
-                  _cache[72] || (_cache[72] = _createElementVNode("br", null, null, -1)),
+                  _cache[74] || (_cache[74] = _createTextVNode("当前PVE主机吗？")),
+                  _cache[75] || (_cache[75] = _createElementVNode("br", null, null, -1)),
                   (pendingHostAction.value==='shutdown')
-                    ? (_openBlock(), _createElementBlock("span", _hoisted_27, "关机后需物理开机或远程唤醒！"))
-                    : (_openBlock(), _createElementBlock("span", _hoisted_28, "重启期间主机将短暂不可用。"))
+                    ? (_openBlock(), _createElementBlock("span", _hoisted_32, "关机后需物理开机或远程唤醒！"))
+                    : (_openBlock(), _createElementBlock("span", _hoisted_33, "重启期间主机将短暂不可用。"))
                 ])
               ]),
               _: 1
@@ -5463,10 +5558,10 @@ return (_ctx, _cache) => {
                 _createVNode(_component_v_btn, {
                   text: "",
                   color: "grey",
-                  onClick: _cache[22] || (_cache[22] = $event => (showHostActionDialog.value=false)),
+                  onClick: _cache[23] || (_cache[23] = $event => (showHostActionDialog.value=false)),
                   disabled: hostActionLoading.value === pendingHostAction.value
                 }, {
-                  default: _withCtx(() => _cache[73] || (_cache[73] = [
+                  default: _withCtx(() => _cache[76] || (_cache[76] = [
                     _createTextVNode("取消")
                   ])),
                   _: 1
@@ -5495,6 +5590,6 @@ return (_ctx, _cache) => {
 }
 
 };
-const PageComponent = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-636f0f91"]]);
+const PageComponent = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-d599eb46"]]);
 
 export { PageComponent as default };
