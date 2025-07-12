@@ -90,7 +90,7 @@ MoviePilot第三方插件库，提供了一系列实用的插件来增强MoviePi
 - `v2.0`：🛠️ 基于imaliang插件二次开发，优化数据保存与界面，增加通知样式选择、历史记录保留
 </details>
 
-#### <img src="https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/openwrt.webp" width="32" style="vertical-align:middle;"> OpenWrt路由备份助手 (OpenWrtBackup)
+#### <img src="https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/openwrt.png" width="32" style="vertical-align:middle;"> OpenWrt路由备份助手 (OpenWrtBackup)
 -   **版本**: `v1.0.1`
 -   **作者**: [@M.Jinxi](https://github.com/xijin285)
 
@@ -127,11 +127,11 @@ MoviePilot第三方插件库，提供了一系列实用的插件来增强MoviePi
 </details>
 
 #### <img src="https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/randompic.png" width="32" style="vertical-align:middle;"> 随机图库 (RandomPic)
--   **版本**: `v1.0.3`
+-   **版本**: `v2.0.0`
 -   **作者**: [@M.Jinxi](https://github.com/xijin285)
 
 **简介**：
-> 随机图片API服务，支持横屏/竖屏图片分类，为您的应用提供优质随机图片资源。
+> 随机图片API服务，支持横屏/竖屏图片分类，智能适配本地与网络图片源，灵活的随机图片资源。
 
 **主要功能**：
 - 🖼️ **智能分类**：
@@ -150,14 +150,23 @@ MoviePilot第三方插件库，提供了一系列实用的插件来增强MoviePi
 - ⚙️ **配置灵活**：
     - 自定义端口设置
     - 独立配置图片目录
+    - 支持网络图片源（直链、API、json/txt列表）
+- 🧠 **智能统计**：
+    - 本地与网络图片统计智能处理，网络图片显示“未知”
+    - 状态页统计数字自适应本地/网络配置
+- 🛠️ **极简UI与操作**：
+    - 配置页面极致精简，所有说明和提示可选隐藏
+    - 快速操作区支持一键重启服务
+    - 端口映射提示带图标，自动适配深浅主题
 
 **最新更新**：
-> `v1.0.3`  
-> 🔧 修复复制按钮失效，优化日志输出  
+> `v2.0.0`  
+> ✨ 全新极简配置界面
 
 <details>
 <summary>历史更新</summary>
 
+- `v1.0.3`：🔧 修复复制按钮失效，优化日志输出  
 - `v1.0.2`：️ 新增可视化预览页面，统计数据查看
 - `v1.0.1`：🚫 禁止缓存，实时刷新图片  
 - `v1.0.0`：🎉 首个正式版本，📱 支持横竖屏图片分类，🔍 自动识别设备类型，🚀 优化传输性能。

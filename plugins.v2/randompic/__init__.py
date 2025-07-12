@@ -2,12 +2,13 @@ import os
 import random
 import mimetypes
 from http.server import HTTPServer, BaseHTTPRequestHandler
-from typing import Any, List, Dict, Tuple
+from typing import Any, List, Dict, Tuple, Optional
 from pathlib import Path
 from datetime import datetime, timedelta
 import re
 import threading
 import socket
+import requests
 
 import pytz
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -15,6 +16,9 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from app.core.config import settings
 from app.log import logger
 from app.plugins import _PluginBase
+
+# 集成网络图片自动识别
+from .network_image_provider import get_network_image_url, count_network_images
 
 # ====== 统计相关全局变量和锁（插入到 import 之后，class 之前）======
 visit_lock = threading.Lock()
@@ -40,14 +44,42 @@ class ImageHandler(BaseHTTPRequestHandler):
         try:
             # logger.info(f"收到请求: {self.path}")
             
-            if self.path.startswith('/preview') or self.path == '/':
-                self._handle_preview_request()
+            if self.path == '/':
+                self.send_error(404, 'Not Found')
                 return
             
             # 只处理/random请求
             if not self.path.startswith('/random'):
                 self.send_error(404, 'Not Found')
                 return
+
+            # ===== 新增：优先处理横/竖屏网络图片地址 =====
+            # 获取type参数
+            type_param = None
+            if '?' in self.path:
+                type_param = re.search(r'type=(\w+)', self.path)
+                if type_param:
+                    type_param = type_param.group(1)
+            # 判断设备类型
+            ua = self.headers.get('User-Agent', '')
+            is_mobile = bool(re.search(r'(phone|pad|pod|iPhone|iPod|ios|iPad|Android|Mobile|BlackBerry|IEMobile|MQQBrowser|JUC|Fennec|wOSBrowser|BrowserNG|WebOS|Symbian|Windows Phone)', ua, re.I))
+            # 横屏/竖屏分流
+            if type_param == 'mobile' or (not type_param and is_mobile):
+                network_url = getattr(self.server, 'network_image_url_mobile', None) or \
+                              getattr(self.server, 'network_image_url', None)
+            else:
+                network_url = getattr(self.server, 'network_image_url_pc', None) or \
+                              getattr(self.server, 'network_image_url', None)
+            if network_url:
+                img_url = get_network_image_url(network_url)
+                if img_url:
+                    self.send_response(302)
+                    self.send_header('Location', img_url)
+                    self.send_header('Access-Control-Allow-Origin', '*')
+                    self.send_header('Cache-Control', 'no-store')
+                    self.end_headers()
+                    return
+            # ===== 原有本地目录逻辑 =====
                 
             # 获取type参数
             type_param = None
@@ -131,61 +163,51 @@ class ImageHandler(BaseHTTPRequestHandler):
         """重写日志方法,避免重复输出访问日志"""
         return
 
-    def _handle_preview_request(self):
-        """处理Web预览页面请求"""
-        try:
-            # 获取当前服务器信息
-            host = self.headers.get('Host', 'localhost')
-            
-            # 读取HTML模板文件
-            html_file_path = os.path.join(os.path.dirname(__file__), 'preview.html')
-            
-            if not os.path.exists(html_file_path):
-                logger.error(f"HTML模板文件不存在: {html_file_path}")
-                self.send_error(500, 'Template file not found')
-                return
-            
-            try:
-                with open(html_file_path, 'r', encoding='utf-8') as f:
-                    html_content = f.read()
-            except Exception as e:
-                logger.error(f"读取HTML模板文件失败: {str(e)}")
-                self.send_error(500, 'Failed to read template file')
-                return
-            
-            # 替换模板中的占位符
-            html_content = html_content.replace('{HOST}', host)
-            
-            # 发送HTML响应
-            self.send_response(200)
-            self.send_header('Content-Type', 'text/html; charset=utf-8')
-            self.send_header('Access-Control-Allow-Origin', '*')
-            self.send_header('Cache-Control', 'no-store')
-            self.end_headers()
-            
-            self.wfile.write(html_content.encode('utf-8'))
-            # logger.info("Web预览页面返回成功")
-            
-        except Exception as e:
-            logger.error(f'处理Web预览页面请求失败: {str(e)}')
-            try:
-                self.send_error(500, 'Internal Server Error')
-            except:
-                pass
+    def _extract_image_urls_from_json(self, data):
+        """递归查找 json 任意层级的所有图片链接"""
+        urls = []
+        if isinstance(data, dict):
+            for v in data.values():
+                urls.extend(self._extract_image_urls_from_json(v))
+        elif isinstance(data, list):
+            for v in data:
+                urls.extend(self._extract_image_urls_from_json(v))
+        elif isinstance(data, str):
+            # 宽松判断：有 http/https 且可能是图片
+            if data.startswith('http'): 
+                # 先判断后缀
+                if data.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.webp')):
+                    urls.append(data)
+                else:
+                    # 尝试 HEAD 请求 Content-Type
+                    try:
+                        resp = requests.head(data, timeout=2, allow_redirects=True)
+                        ct = resp.headers.get('Content-Type', '')
+                        if ct.startswith('image/'):
+                            urls.append(data)
+                    except Exception:
+                        pass
+        return urls
 
     def _handle_stats_request(self):
         """处理统计数据请求，返回图片数量和今日访问量"""
         try:
             pc_path = self.server.pc_path
             mobile_path = self.server.mobile_path
-            # 统计横屏图片数量
-            pc_count = sum(1 for ext in ('*.jpg', '*.jpeg', '*.png', '*.gif', '*.webp') for _ in Path(pc_path).glob(ext))
-            # 统计竖屏图片数量
-            mobile_count = sum(1 for ext in ('*.jpg', '*.jpeg', '*.png', '*.gif', '*.webp') for _ in Path(mobile_path).glob(ext))
-            total = pc_count + mobile_count
+            network_image_url_pc = getattr(self.server, 'network_image_url_pc', None)
+            network_image_url_mobile = getattr(self.server, 'network_image_url_mobile', None)
+            # 本地图片
+            pc_local = sum(1 for ext in ('*.jpg', '*.jpeg', '*.png', '*.gif', '*.webp') for _ in Path(pc_path).glob(ext)) if pc_path and os.path.exists(pc_path) else 0
+            mobile_local = sum(1 for ext in ('*.jpg', '*.jpeg', '*.png', '*.gif', '*.webp') for _ in Path(mobile_path).glob(ext)) if mobile_path and os.path.exists(mobile_path) else 0
+            # 网络图片
+            net_pc = count_network_images(network_image_url_pc) if network_image_url_pc else 0
+            net_mobile = count_network_images(network_image_url_mobile) if network_image_url_mobile else 0
+            # 处理未知
+            pc_total = pc_local + (net_pc if isinstance(net_pc, int) else 0)
+            mobile_total = mobile_local + (net_mobile if isinstance(net_mobile, int) else 0)
+            total = pc_total + mobile_total
             with visit_lock:
                 today = today_visit_count
-            # 返回 JSON
             import json
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
@@ -193,9 +215,16 @@ class ImageHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(json.dumps({
                 "total": total,
-                "pc": pc_count,
-                "mobile": mobile_count,
-                "today": today
+                "pc": pc_total,
+                "mobile": mobile_total,
+                "today": today,
+                "detail": {
+                    "local": {"pc": pc_local, "mobile": mobile_local},
+                    "network": {
+                        "pc": net_pc if net_pc is not None else "未知",
+                        "mobile": net_mobile if net_mobile is not None else "未知"
+                    }
+                }
             }).encode('utf-8'))
         except Exception as e:
             logger.error(f"统计接口异常: {str(e)}")
@@ -209,11 +238,11 @@ class RandomPic(_PluginBase):
     # 插件名称
     plugin_name = "随机图库"
     # 插件描述
-    plugin_desc = "随机图片API服务,支持横屏/竖屏图片分类"
+    plugin_desc = "随机图片API服务，支持横屏/竖屏图片分类，智能适配本地与网络图片源，灵活的随机图片资源"
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/randompic.png"
     # 插件版本
-    plugin_version = "1.0.3"
+    plugin_version = "2.0.0"
     # 插件作者
     plugin_author = "M.Jinxi"
     # 作者主页
@@ -229,21 +258,28 @@ class RandomPic(_PluginBase):
     _scheduler = None
     _server = None
     _server_thread = None
-    _enabled = False
+    _enable = False
     _port = None
     _pc_path = None
     _mobile_path = None
+    _listen_ip = None
+    _network_image_url_pc = None
+    _network_image_url_mobile = None
+    _network_image_url = None  # 兼容老配置
 
     def init_plugin(self, config: dict = None):
         if config:
-            self._enabled = config.get("enabled")
+            self._enable = config.get("enable")
             self._port = config.get("port")
             self._pc_path = config.get("pc_path")
             self._mobile_path = config.get("mobile_path")
+            self._network_image_url_pc = config.get("network_image_url_pc")
+            self._network_image_url_mobile = config.get("network_image_url_mobile")
+            self._network_image_url = config.get("network_image_url")  # 兼容老配置
 
         self.stop_service()
 
-        if self._enabled:
+        if self._enable:
             self._scheduler = BackgroundScheduler(timezone=settings.TZ)
             # logger.info("随机图库服务启动中...")
             self._scheduler.add_job(
@@ -259,215 +295,174 @@ class RandomPic(_PluginBase):
                 self._scheduler.start()
 
     def get_state(self) -> bool:
-        return self._enabled
+        return self._enable
+
+    def get_render_mode(self) -> Tuple[str, Optional[str]]:
+        """返回Vue渲染模式和组件路径"""
+        return "vue", "dist/assets"
 
     @staticmethod
     def get_command() -> List[Dict[str, Any]]:
-        pass
+        return []
 
     def get_api(self) -> List[Dict[str, Any]]:
-        pass
-
-    def get_form(self) -> Tuple[List[dict], Dict[str, Any]]:
-        """
-        拼装插件配置页面
-        """
+        """注册插件API"""
         return [
             {
-                "component": "VForm",
-                "content": [
-                    {
-                        "component": "VRow",
-                        "content": [
-                            {
-                                "component": "VCol",
-                                "props": {
-                                    "cols": 12,
-                                    "md": 4
-                                },
-                                "content": [
-                                    {
-                                        "component": "VSwitch",
-                                        "props": {
-                                            "model": "enabled",
-                                            "label": "启用插件"
-                                        }
-                                    }
-                                ]
-                            },
-                            {
-                                "component": "VCol",
-                                "props": {
-                                    "cols": 12,
-                                    "md": 4
-                                },
-                                "content": [
-                                    {
-                                        "component": "VTextField",
-                                        "props": {
-                                            "model": "port",
-                                            "label": "服务端口",
-                                            "placeholder": "8002"
-                                        }
-                                    }
-                                ]
-                            }
-                        ]
-                    },
-                    {
-                        "component": "VRow",
-                        "content": [
-                            {
-                                "component": "VCol",
-                                "props": {
-                                    "cols": 12
-                                },
-                                "content": [
-                                    {
-                                        "component": "VTextField",
-                                        "props": {
-                                            "model": "pc_path",
-                                            "label": "横屏图片目录",
-                                            "placeholder": "/映射目录/横屏图片 (宽>高,如1920x1080)",
-                                            "hint": "存放横屏/电脑尺寸的图片目录,要求图片宽度大于高度",
-                                            "persistent-hint": True
-                                        }
-                                    }
-                                ]
-                            }
-                        ]
-                    },
-                    {
-                        "component": "VRow",
-                        "content": [
-                            {
-                                "component": "VCol",
-                                "props": {
-                                    "cols": 12
-                                },
-                                "content": [
-                                    {
-                                        "component": "VTextField",
-                                        "props": {
-                                            "model": "mobile_path",
-                                            "label": "竖屏图片目录",
-                                            "placeholder": "/映射目录/竖屏图片 (高>宽,如1080x1920)",
-                                            "hint": "存放竖屏/手机尺寸的图片目录,要求图片高度大于宽度",
-                                            "persistent-hint": True
-                                        }
-                                    }
-                                ]
-                            }
-                        ]
-                    }
-                ]
+                "path": "/config",
+                "endpoint": self._get_config,
+                "methods": ["GET"],
+                "auth": "bear",
+                "summary": "获取配置"
             },
             {
-                "component": "VCard",
-                "props": {
-                    "elevation": 1,
-                    "class": "mb-4",
-                    "style": "border-radius: 12px; background: rgba(33,150,243,0.06);"
-                },
-                "content": [
-                    {
-                        "component": "VCardTitle",
-                        "props": {"style": "font-size: 20px; font-weight: bold; color: #1976d2; display: flex; align-items: center;"},
-                        "content": [
-                            {
-                                "component": "VIcon",
-                                "props": {"color": "info", "size": 24},
-                                "text": "mdi-information"
-                            },
-                            {
-                                "component": "span",
-                                "props": {"style": "margin-left: 8px;"},
-                                "text": "插件使用与API说明"
-                            }
-                        ]
-                    },
-                    {
-                        "component": "VCardText",
-                        "content": [
-                            {
-                                "component": "VList",
-                                "props": {"density": "compact", "style": "background:transparent;box-shadow:none;"},
-                                "content": [
-                                    {
-                                        "component": "VListItem",
-                                        "props": {"density": "compact", "style": "align-items:center;"},
-                                        "content": [
-                                            {"component": "VListItemIcon","content": [{"component": "VIcon", "props": {"color": "primary", "size": 18}, "text": "mdi-numeric-1-circle"}]},
-                                            {"component": "span", "props": {"style": "display:inline-block;vertical-align:middle;white-space:nowrap;"}, "text": "配置服务端口(默认8002)"}
-                                        ]
-                                    },
-                                    {
-                                        "component": "VListItem",
-                                        "props": {"density": "compact", "style": "align-items:center;"},
-                                        "content": [
-                                            {"component": "VListItemIcon","content": [{"component": "VIcon", "props": {"color": "primary", "size": 18}, "text": "mdi-numeric-2-circle"}]},
-                                            {"component": "span", "props": {"style": "display:inline-block;vertical-align:middle;white-space:nowrap;"}, "text": "Docker环境需要映射端口和目录"}
-                                        ]
-                                    },
-                                    {
-                                        "component": "VListItem",
-                                        "props": {"density": "compact", "style": "align-items:center;"},
-                                        "content": [
-                                            {"component": "VListItemIcon","content": [{"component": "VIcon", "props": {"color": "primary", "size": 18}, "text": "mdi-numeric-3-circle"}]},
-                                            {"component": "span", "props": {"style": "display:inline-block;vertical-align:middle;white-space:nowrap;"}, "text": "支持jpg/jpeg/png/gif/webp格式"}
-                                        ]
-                                    },
-                                    {
-                                        "component": "VListItem",
-                                        "props": {"density": "compact"},
-                                        "content": [
-                                            {"component": "VListItemIcon","content": [{"component": "VIcon", "props": {"color": "success", "size": 18}, "text": "mdi-numeric-1-circle"}]},
-                                            {"component": "VListItemSubtitle", "text": "Web预览页面: ", "props": {"style": "display:inline;"}},
-                                            {"component": "span", "props": {"style": "font-family:monospace;color:#388e3c;"}, "text": "http://IP:端口/preview"}
-                                        ]
-                                    },
-                                    {
-                                        "component": "VListItem",
-                                        "props": {"density": "compact"},
-                                        "content": [
-                                            {"component": "VListItemIcon","content": [{"component": "VIcon", "props": {"color": "success", "size": 18}, "text": "mdi-numeric-2-circle"}]},
-                                            {"component": "VListItemSubtitle", "text": "自动识别设备: ", "props": {"style": "display:inline;"}},
-                                            {"component": "span", "props": {"style": "font-family:monospace;color:#388e3c;"}, "text": "http://IP:端口/random"}
-                                        ]
-                                    },
-                                    {
-                                        "component": "VListItem",
-                                        "props": {"density": "compact"},
-                                        "content": [
-                                            {"component": "VListItemIcon","content": [{"component": "VIcon", "props": {"color": "success", "size": 18}, "text": "mdi-numeric-3-circle"}]},
-                                            {"component": "VListItemSubtitle", "text": "指定横屏图片: ", "props": {"style": "display:inline;"}},
-                                            {"component": "span", "props": {"style": "font-family:monospace;color:#388e3c;"}, "text": "http://IP:端口/random?type=pc"}
-                                        ]
-                                    },
-                                    {
-                                        "component": "VListItem",
-                                        "props": {"density": "compact"},
-                                        "content": [
-                                            {"component": "VListItemIcon","content": [{"component": "VIcon", "props": {"color": "success", "size": 18}, "text": "mdi-numeric-4-circle"}]},
-                                            {"component": "VListItemSubtitle", "text": "指定竖屏图片: ", "props": {"style": "display:inline;"}},
-                                            {"component": "span", "props": {"style": "font-family:monospace;color:#388e3c;"}, "text": "http://IP:端口/random?type=mobile"}
-                                        ]
-                                    }
-                                ]
-                            }
-                        ]
-                    }
-                ]
+                "path": "/config",
+                "endpoint": self._save_config,
+                "methods": ["POST"],
+                "auth": "bear",
+                "summary": "保存配置"
+            },
+            {
+                "path": "/status",
+                "endpoint": self._get_status,
+                "methods": ["GET"],
+                "auth": "bear",
+                "summary": "获取状态"
             }
-        ], {
-            "enabled": False,
-            "port": "",
-            "pc_path": "",
-            "mobile_path": ""
+        ]
+
+    def _get_config(self) -> Dict[str, Any]:
+        """API处理函数：返回插件配置"""
+        return {
+            "enable": self._enable,
+            "port": self._port,
+            "pc_path": self._pc_path,
+            "mobile_path": self._mobile_path,
+            "network_image_url_pc": self._network_image_url_pc,
+            "network_image_url_mobile": self._network_image_url_mobile,
+            "network_image_url": self._network_image_url,  # 兼容老配置
+        }
+
+    def _save_config(self, data: dict) -> dict:
+        """ API处理函数 """
+        try:
+            enable = data.get("enable")
+            port = data.get("port")
+            pc_path = data.get("pc_path")
+            mobile_path = data.get("mobile_path")
+            network_image_url_pc = data.get("network_image_url_pc")
+            network_image_url_mobile = data.get("network_image_url_mobile")
+            network_image_url = data.get("network_image_url")  # 兼容老配置
+
+            # 参数校验
+            if not port or not pc_path or not mobile_path:
+                return {"success": False, "msg": "端口和图片目录不能为空"}
+
+            self._enable = enable
+            self._port = port
+            self._pc_path = pc_path
+            self._mobile_path = mobile_path
+            self._network_image_url_pc = network_image_url_pc
+            self._network_image_url_mobile = network_image_url_mobile
+            self._network_image_url = network_image_url  # 兼容老配置
+
+            # 持久化配置
+            self.update_config({
+                "enable": self._enable,
+                "port": self._port,
+                "pc_path": self._pc_path,
+                "mobile_path": self._mobile_path,
+                "network_image_url_pc": self._network_image_url_pc,
+                "network_image_url_mobile": self._network_image_url_mobile,
+                "network_image_url": self._network_image_url,  # 兼容老配置
+            })
+
+            # 重启服务
+            self.stop_service()
+            self.init_plugin(self.get_config())
+
+            return {"success": True, "msg": "配置保存成功"}
+        except Exception as e:
+            logger.error(f"保存配置失败: {str(e)}")
+            return {"success": False, "msg": f"保存配置失败: {str(e)}"}
+
+    def _get_status(self) -> Dict[str, Any]:
+        """API处理函数：返回插件状态"""
+        # 统计图片数量
+        pc_count = 0
+        mobile_count = 0
+        if self._pc_path and os.path.exists(self._pc_path):
+            for ext in ('*.jpg', '*.jpeg', '*.png', '*.gif', '*.webp'):
+                pc_count += len(list(Path(self._pc_path).glob(ext)))
+        if self._mobile_path and os.path.exists(self._mobile_path):
+            for ext in ('*.jpg', '*.jpeg', '*.png', '*.gif', '*.webp'):
+                mobile_count += len(list(Path(self._mobile_path).glob(ext)))
+
+        return {
+            "enable": self._enable,
+            "port": self._port,
+            "pc_path": self._pc_path,
+            "mobile_path": self._mobile_path,
+            "network_image_url_pc": self._network_image_url_pc,
+            "network_image_url_mobile": self._network_image_url_mobile,
+            "network_image_url": self._network_image_url,  # 兼容老配置
+            "pc_count": pc_count,
+            "mobile_count": mobile_count,
+            "total_count": pc_count + mobile_count,
+            "today_visits": today_visit_count,
+            "server_status": "running" if (self._server and self._server_thread and self._server_thread.is_alive()) else "stopped",
+            "last_error": "",
+            "listen_ip": self._listen_ip,
+        }
+
+    def get_form(self) -> Tuple[Optional[List[dict]], Dict[str, Any]]:
+        """
+        【重要】为Vue模式提供配置页面的定义。
+        即使使用Vue模式，这个方法也必须实现，否则将导致插件加载失败。
+        Vue模式下，第一个参数返回None，第二个参数返回初始配置数据。
+        """
+        return None, {
+            "enable": self._enable,
+            "port": self._port,
+            "pc_path": self._pc_path,
+            "mobile_path": self._mobile_path,
+            "network_image_url_pc": self._network_image_url_pc,
+            "network_image_url_mobile": self._network_image_url_mobile,
+            "network_image_url": self._network_image_url,  # 兼容老配置
         }
 
     def get_page(self) -> List[dict]:
-        pass
+        """
+        【重要】为Vuetify模式提供数据页面的定义。
+        即使使用Vue模式，这个方法也必须实现，否则将导致插件加载失败。
+        Vue模式下，返回一个空列表即可。
+        """
+        return []
+
+    def get_dashboard_meta(self) -> Optional[List[Dict[str, str]]]:
+        """获取插件仪表盘元信息"""
+        return [
+            {
+                "key": "main_dashboard",
+                "name": "随机图库状态"
+            }
+        ]
+
+    def get_dashboard(self, key: str, **kwargs) -> Optional[
+        Tuple[Dict[str, Any], Dict[str, Any], Optional[List[dict]]]]:
+        """获取插件仪表盘页面"""
+        if key == "main_dashboard":
+            # Vue组件模式（返回None作为第三个参数）
+            return {
+                "cols": 12,
+                "md": 6
+            }, {
+                "refresh": 30,
+                "border": True,
+                "title": "随机图库状态",
+                "subtitle": "图片统计和访问数据"
+            }, None
+        return None
 
     def __run_service(self):
         """
@@ -477,22 +472,25 @@ class RandomPic(_PluginBase):
             logger.error("未配置端口，无法启动服务")
             return
 
-        if not self._pc_path or not self._mobile_path:
-            logger.error("未配置图片目录，无法启动服务")
+        if not (self._pc_path or self._network_image_url_pc):
+            logger.error("未配置横屏图片目录或网络图片地址，无法启动服务")
+            return
+        if not (self._mobile_path or self._network_image_url_mobile):
+            logger.error("未配置竖屏图片目录或网络图片地址，无法启动服务")
             return
 
         # 转换为绝对路径
-        pc_path = os.path.abspath(self._pc_path)
-        mobile_path = os.path.abspath(self._mobile_path)
+        pc_path = os.path.abspath(self._pc_path) if self._pc_path else None
+        mobile_path = os.path.abspath(self._mobile_path) if self._mobile_path else None
         
         # logger.info(f"横屏图片目录: {pc_path}")
         # logger.info(f"竖屏图片目录: {mobile_path}")
 
-        if not os.path.exists(pc_path):
+        if pc_path and not os.path.exists(pc_path):
             logger.error(f"横屏图片目录不存在: {pc_path}")
             return
 
-        if not os.path.exists(mobile_path):
+        if mobile_path and not os.path.exists(mobile_path):
             logger.error(f"竖屏图片目录不存在: {mobile_path}")
             return
 
@@ -509,10 +507,15 @@ class RandomPic(_PluginBase):
             sock.close()
             
             # 创建HTTP服务器
-            self._server = HTTPServer(('0.0.0.0', port), ImageHandler)
-            # 传递图片目录路径给Handler
-            self._server.pc_path = pc_path
-            self._server.mobile_path = mobile_path
+            listen_ip = '0.0.0.0'
+            class CustomHTTPServer(HTTPServer):
+                pass
+            self._server = CustomHTTPServer((listen_ip, port), ImageHandler)
+            self._server.pc_path = self._pc_path
+            self._server.mobile_path = self._mobile_path
+            self._server.network_image_url_pc = self._network_image_url_pc
+            self._server.network_image_url_mobile = self._network_image_url_mobile
+            self._server.network_image_url = self._network_image_url  # 兼容老配置
             
             # 在新线程中启动服务器
             self._server_thread = threading.Thread(target=self._server.serve_forever)
@@ -528,7 +531,7 @@ class RandomPic(_PluginBase):
                 ip = '127.0.0.1'
             finally:
                 s.close()
-            
+            self._listen_ip = ip
             # 启动服务器
             logger.info(f"随机图库服务启动成功! 访问地址: http://{ip}:{port}/random")
         except Exception as e:
