@@ -232,7 +232,7 @@ MoviePilot第三方插件库，提供了一系列实用的插件来增强MoviePi
 > 🎉 首个正式版本：支持夸克网盘基础操作、存储集成等功能。
 
 #### <img src="https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/cfipselector.png" width="32" style="vertical-align:middle;"> PT云盾优选 (CFIPSelector)
-- **版本**: `v1.0.0`
+- **版本**: `v1.0.1`
 - **作者**: [@M.Jinxi](https://github.com/xijin285)
 
 **简介**：
@@ -248,12 +248,11 @@ MoviePilot第三方插件库，提供了一系列实用的插件来增强MoviePi
 - ⚙️ **灵活配置**：支持自定义数据中心、IP类型、延迟阈值等参数
 
 **最新更新**：
-> `v1.0.0`  
-> 🛡️ 首个正式版，集成Cloudflare IP优选、自动hosts写入、多站点测速、定时任务与多渠道通知推送。
+> `v1.0.1`  
+> 🛠️ 修复定时任务不准问题，懒人配置站点默认全选。
 
 <details>
 <summary>历史更新</summary>
-
 - `v1.0.0`：🛡️ 首发，支持Cloudflare IP优选、自动写入hosts、多站点测速、定时任务与多渠道通知推送。
 </details>
 

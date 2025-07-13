@@ -6,6 +6,7 @@ import subprocess
 import os
 from datetime import datetime
 from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
 from app.plugins import _PluginBase
 from app.log import logger
 from app.core.config import settings
@@ -23,7 +24,7 @@ class CFIPSelector(_PluginBase):
     plugin_name = "PT云盾优选"
     plugin_desc = "PT站点专属优选IP，自动写入hosts，访问快人一步"
     plugin_icon = "https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/cfipselector.png"
-    plugin_version = "1.0.0"
+    plugin_version = "1.0.1"
     plugin_author = "M.Jinxi"
     author_url = "https://github.com/xijin285"
     plugin_config_prefix = "cfipselector_"
@@ -136,9 +137,13 @@ class CFIPSelector(_PluginBase):
         if self._scheduler and self._scheduler.running:
             self._scheduler.shutdown()
         self._scheduler = BackgroundScheduler(timezone=settings.TZ)
-        self._scheduler.add_job(self.select_ips, 'cron', **self._parse_cron(self._cron))
-        self._scheduler.start()
-        logger.info(f"{self.plugin_name} 定时任务已启动")
+        try:
+            trigger = CronTrigger.from_crontab(self._cron, timezone=settings.TZ)
+            self._scheduler.add_job(self.select_ips, trigger=trigger, name=f"{self.plugin_name}定时服务", id=f"{self.plugin_name}定时服务")
+            self._scheduler.start()
+            logger.info(f"{self.plugin_name} 定时任务已启动: {self._cron}")
+        except Exception as e:
+            logger.error(f"{self.plugin_name} cron表达式格式错误: {self._cron}, 错误: {e}")
 
     def _parse_cron(self, cron_str):
         parts = cron_str.split()
@@ -262,15 +267,27 @@ class CFIPSelector(_PluginBase):
 
     def _get_selected_sites_info(self) -> List[Dict[str, Any]]:
         """
-        获取选中站点的详细信息（id, name, domain）
+        获取选中站点的详细信息（id, name, domain）。如果没选，默认全部。
         """
         infos = []
-        if not self._sign_sites or not self.siteoper:
+        if not self.siteoper:
             return infos
         try:
+            # 获取全部active站点id
+            all_ids = [str(site.id) for site in self.siteoper.list_active()]
+            # 获取全部自定义站点id
+            try:
+                custom_sites_config = self.get_config("CustomSites")
+                if custom_sites_config and custom_sites_config.get("enabled"):
+                    custom_sites = custom_sites_config.get("sites")
+                    all_ids += [str(site.get("id")) for site in custom_sites]
+            except Exception:
+                pass
+            # 如果没选，默认全部
+            sign_sites = self._sign_sites if self._sign_sites else all_ids
             # 内置站点
             for site in self.siteoper.list_active():
-                if str(site.id) in self._sign_sites:
+                if str(site.id) in sign_sites:
                     infos.append({"id": str(site.id), "name": getattr(site, "name", str(site.id)), "domain": site.domain})
             # 自定义站点
             try:
@@ -278,7 +295,7 @@ class CFIPSelector(_PluginBase):
                 if custom_sites_config and custom_sites_config.get("enabled"):
                     custom_sites = custom_sites_config.get("sites")
                     for site in custom_sites:
-                        if str(site.get("id")) in self._sign_sites:
+                        if str(site.get("id")) in sign_sites:
                             infos.append({"id": str(site.get("id")), "name": site.get("name", str(site.get("id"))), "domain": site.get("domain")})
             except Exception as e:
                 logger.warning(f"获取自定义站点失败: {e}")
@@ -290,30 +307,38 @@ class CFIPSelector(_PluginBase):
         """
         获取选中站点的域名列表
         """
-        if not self._sign_sites or not self.siteoper:
+        if not self.siteoper:
             return []
-        
         domains = []
         try:
+            # 获取全部active站点id
+            all_ids = [str(site.id) for site in self.siteoper.list_active()]
+            # 获取全部自定义站点id
+            try:
+                custom_sites_config = self.get_config("CustomSites")
+                if custom_sites_config and custom_sites_config.get("enabled"):
+                    custom_sites = custom_sites_config.get("sites")
+                    all_ids += [str(site.get("id")) for site in custom_sites]
+            except Exception:
+                pass
+            # 如果没选，默认全部
+            sign_sites = self._sign_sites if self._sign_sites else all_ids
             # 获取内置站点
             for site in self.siteoper.list_active():
-                if str(site.id) in self._sign_sites:
+                if str(site.id) in sign_sites:
                     domains.append(site.domain)
-            
             # 获取自定义站点
             try:
                 custom_sites_config = self.get_config("CustomSites")
                 if custom_sites_config and custom_sites_config.get("enabled"):
                     custom_sites = custom_sites_config.get("sites")
                     for site in custom_sites:
-                        if str(site.get("id")) in self._sign_sites:
+                        if str(site.get("id")) in sign_sites:
                             domains.append(site.get("domain"))
             except Exception as e:
                 logger.warning(f"获取自定义站点失败: {e}")
-                
         except Exception as e:
             logger.error(f"获取选中站点域名失败: {e}")
-        
         logger.info(f"选中的检测站点域名: {domains}")
         return domains
 
