@@ -17,18 +17,18 @@ from app.core.config import settings
 from app.log import logger
 from app.plugins import _PluginBase
 from app.schemas import NotificationType
-from .pve import get_pve_status, get_container_status, get_qemu_status
+from .pve import get_pve_status, get_container_status, get_qemu_status, clean_pve_tmp_files, clean_pve_logs, list_template_images, download_template_image, delete_template_image, upload_template_image, download_template_image_from_url
 
 
 class ProxmoxVEBackup(_PluginBase):
     # 插件名称
     plugin_name = "PVE虚拟机守护神"
     # 插件描述
-    plugin_desc = "PVE虚拟机守护神，自动化备份与恢复容器，提供完整的备份管理解决方案。"
+    plugin_desc = "一站式PVE虚拟化管理平台，智能自动化集成可视化界面高效掌控虚拟机与容器"
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/proxmox.webp"
     # 插件版本
-    plugin_version = "2.0.1"
+    plugin_version = "2.1.0"
     # 插件作者
     plugin_author = "M.Jinxi"
     # 作者主页
@@ -99,6 +99,14 @@ class ProxmoxVEBackup(_PluginBase):
     _stopped: bool = False  # 增加已停止标志
     _instance = None  # 单例实例
 
+    # 新增：系统日志清理配置
+    _enable_log_cleanup: bool = False
+    _log_journal_days: int = 7
+    _log_vzdump_keep: int = 7
+    _log_pve_keep: int = 7
+    _log_dpkg_keep: int = 7
+    _cleanup_template_images: bool = False
+
     def init_plugin(self, config: Optional[dict] = None):
         # 停止已有服务，防止多实例冲突
         self.stop_service()
@@ -150,6 +158,14 @@ class ProxmoxVEBackup(_PluginBase):
             self._restore_skip_existing = bool(saved_config.get("restore_skip_existing", True))
             self._restore_file = str(saved_config.get("restore_file", ""))
             self._restore_now = bool(saved_config.get("restore_now", False))
+            self.auto_cleanup_tmp = saved_config.get("auto_cleanup_tmp", True)
+            # 新增系统日志清理配置
+            self._enable_log_cleanup = bool(saved_config.get("enable_log_cleanup", False))
+            self._log_journal_days = int(saved_config.get("log_journal_days", 7))
+            self._log_vzdump_keep = int(saved_config.get("log_vzdump_keep", 7))
+            self._log_pve_keep = int(saved_config.get("log_pve_keep", 7))
+            self._log_dpkg_keep = int(saved_config.get("log_dpkg_keep", 7))
+            self._cleanup_template_images = bool(saved_config.get("cleanup_template_images", False))
             
         # 新配置覆盖
         if config:
@@ -158,6 +174,21 @@ class ProxmoxVEBackup(_PluginBase):
                     self._cron = str(v)
                 if hasattr(self, f"_{k}"):
                     setattr(self, f"_{k}", v)
+                # 新增：支持 auto_cleanup_tmp
+                if k == "auto_cleanup_tmp":
+                    self.auto_cleanup_tmp = bool(v)
+                if k == "enable_log_cleanup":
+                    self._enable_log_cleanup = bool(v)
+                if k == "log_journal_days":
+                    self._log_journal_days = int(v)
+                if k == "log_vzdump_keep":
+                    self._log_vzdump_keep = int(v)
+                if k == "log_pve_keep":
+                    self._log_pve_keep = int(v)
+                if k == "log_dpkg_keep":
+                    self._log_dpkg_keep = int(v)
+                if k == "cleanup_template_images":
+                    self._cleanup_template_images = bool(v)
             self.__update_config()
 
         # 处理清理历史/立即恢复
@@ -272,12 +303,15 @@ class ProxmoxVEBackup(_PluginBase):
                 'enable_webdav', 'webdav_url', 'webdav_username', 'webdav_password', 'webdav_path', 'webdav_keep_backup_num',
                 'storage_name', 'backup_vmid', 'backup_mode', 'compress_mode', 'auto_delete_after_download', 'download_all_backups',
                 'enable_restore', 'restore_force', 'restore_skip_existing', 'restore_storage', 'restore_vmid', 'restore_now', 'restore_file',
-                'clear_history'
+                'clear_history',
+                'auto_cleanup_tmp'
                 , 'cron'
             }
             for key in critical_keys:
                 if key in config:
                     critical_config[key] = config[key]
+            if 'auto_cleanup_tmp' not in critical_config:
+                critical_config['auto_cleanup_tmp'] = True
             import json
             config_str = json.dumps(critical_config, sort_keys=True, ensure_ascii=False)
             return hashlib.md5(config_str.encode('utf-8')).hexdigest()
@@ -330,6 +364,15 @@ class ProxmoxVEBackup(_PluginBase):
             "restore_skip_existing": self._restore_skip_existing,
             "restore_file": self._restore_file,
             "restore_now": self._restore_now,
+            "auto_cleanup_tmp": getattr(self, "auto_cleanup_tmp", True),
+            
+            # 新增系统日志清理配置
+            "enable_log_cleanup": getattr(self, "_enable_log_cleanup", False),
+            "log_journal_days": getattr(self, "_log_journal_days", 7),
+            "log_vzdump_keep": getattr(self, "_log_vzdump_keep", 7),
+            "log_pve_keep": getattr(self, "_log_pve_keep", 7),
+            "log_dpkg_keep": getattr(self, "_log_dpkg_keep", 7),
+            "cleanup_template_images": self._cleanup_template_images,
         })
         
         # 保存配置哈希
@@ -471,6 +514,20 @@ class ProxmoxVEBackup(_PluginBase):
                 "methods": ["POST"],
                 "auth": "bear",
                 "summary": "对PVE主机执行重启或关机"
+            },
+            {
+                "path": "/cleanup_logs",
+                "endpoint": self._cleanup_logs_api,
+                "methods": ["POST"],
+                "auth": "bear",
+                "summary": "清理PVE系统日志"
+            },
+            {
+                "path": "/template_images",
+                "endpoint": self._template_images_api,
+                "methods": ["GET"],
+                "auth": "bear",
+                "summary": "列出所有CT模板和ISO镜像"
             },
         ]
 
@@ -687,7 +744,7 @@ class ProxmoxVEBackup(_PluginBase):
                 if not line:
                     break
                 line = line.strip()
-                logger.info(f"{self.plugin_name} vzdump输出: {line}")
+                #logger.info(f"{self.plugin_name} vzdump输出: {line}")
                 # 从vzdump日志中解析出备份文件名
                 match = re.search(r"creating vzdump archive '(.+)'", line)
                 if match:
@@ -733,7 +790,7 @@ class ProxmoxVEBackup(_PluginBase):
             if not files_to_download:
                 return False, "没有找到需要下载的备份文件。", None, {}
             
-            logger.info(f"{self.plugin_name} 准备下载 {len(files_to_download)} 个文件: {', '.join(files_to_download)}")
+            #logger.info(f"{self.plugin_name} 准备下载 {len(files_to_download)} 个文件: {', '.join(files_to_download)}")
 
             sftp = ssh.open_sftp()
             
@@ -809,11 +866,33 @@ class ProxmoxVEBackup(_PluginBase):
                     ssh.close()
                 except:
                     pass
+            try:
+                # 优先读取 self.auto_cleanup_tmp，没有就 get_config()
+                if hasattr(self, 'auto_cleanup_tmp'):
+                    auto_cleanup = getattr(self, 'auto_cleanup_tmp', False)
+                else:
+                    auto_cleanup = self.get_config().get('auto_cleanup_tmp', False)
+                if auto_cleanup:
+                    count, error = clean_pve_tmp_files(
+                        self._pve_host,
+                        self._ssh_port,
+                        self._ssh_username,
+                        self._ssh_password,
+                        self._ssh_key_file
+                    )
+                    if error:
+                        logger.warning(f"{self.plugin_name} 自动清理临时空间失败: {error}")
+                    else:
+                        logger.info(f"{self.plugin_name} 自动清理临时空间完成，已清理 {count} 个 .tmp 文件")
+                else:
+                    logger.info(f"{self.plugin_name} 未启用自动清理临时空间，跳过清理。")
+            except Exception as e:
+                logger.warning(f"{self.plugin_name} 自动清理临时空间异常: {e}")
 
     def _cleanup_old_backups(self):
         if not self._backup_path or self._keep_backup_num <= 0: return
         try:
-            logger.info(f"{self.plugin_name} 开始清理本地备份目录: {self._backup_path}, 保留数量: {self._keep_backup_num} (仅处理 Proxmox 备份文件 .tar.gz/.tar.lzo/.tar.zst/.vma.gz/.vma.lzo/.vma.zst)")
+            logger.info(f"{self.plugin_name} 开始清理本地备份目录: {self._backup_path}")
             backup_dir = Path(self._backup_path)
             if not backup_dir.is_dir():
                 logger.warning(f"{self.plugin_name} 本地备份目录 {self._backup_path} 不存在，无需清理。")
@@ -1822,7 +1901,7 @@ class ProxmoxVEBackup(_PluginBase):
                     ssh.connect(self._pve_host, port=self._ssh_port, username=self._ssh_username, pkey=private_key)
                 else:
                     ssh.connect(self._pve_host, port=self._ssh_port, username=self._ssh_username, password=self._ssh_password)
-                logger.info(f"{self.plugin_name} SSH连接成功")
+                #logger.info(f"{self.plugin_name} SSH连接成功")
             except Exception as e:
                 return False, f"SSH连接失败: {str(e)}", None
 
@@ -1961,6 +2040,29 @@ class ProxmoxVEBackup(_PluginBase):
                     ssh.close()
                 except:
                     pass
+            # 自动清理PVE临时空间（受开关控制）
+            try:
+                # 优先读取 self.auto_cleanup_tmp，没有就 get_config()
+                if hasattr(self, 'auto_cleanup_tmp'):
+                    auto_cleanup = getattr(self, 'auto_cleanup_tmp', False)
+                else:
+                    auto_cleanup = self.get_config().get('auto_cleanup_tmp', False)
+                if auto_cleanup:
+                    count, error = clean_pve_tmp_files(
+                        self._pve_host,
+                        self._ssh_port,
+                        self._ssh_username,
+                        self._ssh_password,
+                        self._ssh_key_file
+                    )
+                    if error:
+                        logger.warning(f"{self.plugin_name} 自动清理临时空间失败: {error}")
+                    else:
+                        logger.info(f"{self.plugin_name} 自动清理临时空间完成，已清理 {count} 个 .tmp 文件")
+                else:
+                    logger.info(f"{self.plugin_name} 未启用自动清理临时空间，跳过清理。")
+            except Exception as e:
+                logger.warning(f"{self.plugin_name} 自动清理临时空间异常: {e}")
 
     def _extract_vmid_from_backup(self, filename: str) -> Optional[str]:
         """从备份文件名中提取VMID"""
@@ -2325,6 +2427,8 @@ class ProxmoxVEBackup(_PluginBase):
             "enable_restore": self._enable_restore,
             "cron": self._cron,
             "next_run_time": next_run_time,
+            "enable_log_cleanup": getattr(self, "_enable_log_cleanup", False),
+            "cleanup_template_images": self._cleanup_template_images,
         }
 
     def _save_config(self, data: dict = None):
@@ -2763,3 +2867,50 @@ class ProxmoxVEBackup(_PluginBase):
             return {"success": True, "msg": f"主机{action}命令已发送"}
         except Exception as e:
             return {"success": False, "msg": str(e)}
+
+    def _cleanup_tmp_api(self, *args, **kwargs):
+        import glob, os
+        count = 0
+        for f in glob.glob('/var/lib/vz/dump/*.tmp'):
+            try:
+                os.remove(f)
+                count += 1
+            except Exception:
+                pass
+        return {"success": True, "msg": f"已清理 {count} 个临时文件"}
+
+    def _cleanup_logs_api(self, data: dict = None):
+        """API处理函数：清理PVE系统日志"""
+        if not self._enable_log_cleanup:
+            return {"success": False, "msg": "未启用日志清理功能"}
+        try:
+            res = clean_pve_logs(
+                self._pve_host,
+                self._ssh_port,
+                self._ssh_username,
+                self._ssh_password,
+                self._ssh_key_file,
+                journal_days=self._log_journal_days,
+                log_dirs={
+                    "/var/log/vzdump": self._log_vzdump_keep,
+                    "/var/log/pve": self._log_pve_keep,
+                    "/var/log/dpkg.log": self._log_dpkg_keep
+                }
+            )
+            return {"success": True, "msg": "日志清理完成", "result": res}
+        except Exception as e:
+            return {"success": False, "msg": f"日志清理失败: {e}"}
+
+    def _template_images_api(self):
+        """列出所有CT模板和ISO镜像"""
+        try:
+            images = list_template_images(
+                self._pve_host,
+                self._ssh_port,
+                self._ssh_username,
+                self._ssh_password,
+                self._ssh_key_file
+            )
+            return images  # 直接返回数组，兼容前端
+        except Exception as e:
+            return []

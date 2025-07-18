@@ -97,7 +97,6 @@ async function fetchSummary() {
       throw new Error('仪表盘数据响应无效');
     }
   } catch (err) {
-    console.error('获取仪表盘数据失败:', err);
     error.value = err.message || '获取仪表盘数据失败';
   } finally {
     loading.value = false;
@@ -413,6 +412,6 @@ return (_ctx, _cache) => {
 }
 
 };
-const DashboardComponent = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-0bc3812f"]]);
+const DashboardComponent = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-dc3aad5e"]]);
 
 export { DashboardComponent as default };

@@ -1,5 +1,5 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
-import { a as cronstrue } from './zh_CN-BW7ak9RT.js';
+import { a as cronstrue } from './zh_CN-CNefNtEK.js';
 import { _ as _export_sfc } from './_plugin-vue_export-helper-pcqpp-6-.js';
 
 const {resolveComponent:_resolveComponent,createVNode:_createVNode,createElementVNode:_createElementVNode,normalizeClass:_normalizeClass,createTextVNode:_createTextVNode,withCtx:_withCtx,toDisplayString:_toDisplayString,openBlock:_openBlock,createBlock:_createBlock,createCommentVNode:_createCommentVNode,createElementBlock:_createElementBlock,Transition:_Transition,renderList:_renderList,Fragment:_Fragment,createStaticVNode:_createStaticVNode} = await importShared('vue');
@@ -18,21 +18,41 @@ const _hoisted_7 = { class: "section-title" };
 const _hoisted_8 = { class: "nav-bar-crystal" };
 const _hoisted_9 = ["onClick"];
 const _hoisted_10 = { class: "crystal-inner" };
-const _hoisted_11 = {
+const _hoisted_11 = ["innerHTML"];
+const _hoisted_12 = {
   class: "crystal-ball",
   viewBox: "0 0 100 100"
 };
-const _hoisted_12 = ["cx", "cy", "fill"];
-const _hoisted_13 = ["begin"];
-const _hoisted_14 = ["innerHTML"];
+const _hoisted_13 = ["cx", "cy", "fill"];
+const _hoisted_14 = ["begin"];
 const _hoisted_15 = { class: "crystal-label" };
 const _hoisted_16 = { class: "glass-card content-area" };
 const _hoisted_17 = { key: 0 };
 const _hoisted_18 = { key: 1 };
 const _hoisted_19 = { key: 2 };
-const _hoisted_20 = { key: 3 };
-const _hoisted_21 = { key: 4 };
-const _hoisted_22 = { class: "action-btns" };
+const _hoisted_20 = {
+  class: "switch-flex-row",
+  style: {"margin-bottom":"8px"}
+};
+const _hoisted_21 = { class: "switch-flex-item" };
+const _hoisted_22 = { class: "switch-flex-item" };
+const _hoisted_23 = {
+  class: "switch-flex-row",
+  style: {"margin-bottom":"18px"}
+};
+const _hoisted_24 = { class: "switch-flex-item" };
+const _hoisted_25 = { class: "switch-flex-item" };
+const _hoisted_26 = { class: "switch-flex-item" };
+const _hoisted_27 = { key: 3 };
+const _hoisted_28 = { class: "risk-warning mb-4" };
+const _hoisted_29 = { class: "cleanup-switch-row" };
+const _hoisted_30 = { class: "feature-list" };
+const _hoisted_31 = { key: 4 };
+const _hoisted_32 = { class: "section-title" };
+const _hoisted_33 = { style: {"font-size":"1.1em","line-height":"1.8","color":"#2196f3","padding":"24px 8px 8px 8px"} };
+const _hoisted_34 = { class: "action-btns" };
+const _hoisted_35 = { class: "left-btns" };
+const _hoisted_36 = { class: "right-btns" };
 
 const {ref,reactive,onMounted,computed,watch} = await importShared('vue');
 // 主题切换逻辑
@@ -116,6 +136,15 @@ const config = reactive({
   clear_history: false,
   // 新增cron字段
   cron: '0 3 * * *',
+  // 新增：自动清理临时空间
+  auto_cleanup_tmp: true,
+  // 新增系统日志清理配置
+  enable_log_cleanup: false,
+  log_journal_days: 7,
+  log_vzdump_keep: 7,
+  log_pve_keep: 7,
+  log_dpkg_keep: 7,
+  cleanup_template_images: false,
 });
 
 async function fetchConfig() {
@@ -127,6 +156,14 @@ async function fetchConfig() {
       Object.assign(config, data);
       initialDataLoaded.value = true;
       if (!config.ssh_username) config.ssh_username = 'root';
+      if (typeof config.auto_cleanup_tmp === 'undefined') config.auto_cleanup_tmp = true;
+      // 新增系统日志清理配置默认
+      if (typeof config.enable_log_cleanup === 'undefined') config.enable_log_cleanup = false;
+      if (typeof config.log_journal_days === 'undefined') config.log_journal_days = 7;
+      if (typeof config.log_vzdump_keep === 'undefined') config.log_vzdump_keep = 7;
+      if (typeof config.log_pve_keep === 'undefined') config.log_pve_keep = 7;
+      if (typeof config.log_dpkg_keep === 'undefined') config.log_dpkg_keep = 7;
+      if (typeof config.cleanup_template_images === 'undefined') config.cleanup_template_images = false;
     } else {
       throw new Error('获取配置响应无效或为空');
     }
@@ -179,6 +216,15 @@ async function saveConfig() {
       clear_history: Boolean(config.clear_history),
       // 新增cron字段
       cron: String(config.cron || ''),
+      // 新增：自动清理临时空间
+      auto_cleanup_tmp: Boolean(config.auto_cleanup_tmp),
+      // 新增：系统日志清理配置
+      enable_log_cleanup: Boolean(config.enable_log_cleanup),
+      log_journal_days: Number(config.log_journal_days) || 0,
+      log_vzdump_keep: Number(config.log_vzdump_keep) || 0,
+      log_pve_keep: Number(config.log_pve_keep) || 0,
+      log_dpkg_keep: Number(config.log_dpkg_keep) || 0,
+      cleanup_template_images: Boolean(config.cleanup_template_images),
     };
     emit('save', pureConfig);
     // 保存成功后主动刷新状态，确保启用插件后立即生效
@@ -238,6 +284,13 @@ function resetConfig() {
     clear_history: false,
     // 新增cron字段
     cron: '0 3 * * *',
+    auto_cleanup_tmp: true,
+    cleanup_template_images: false,
+    enable_log_cleanup: false,
+    log_journal_days: 7,
+    log_vzdump_keep: 7,
+    log_pve_keep: 7,
+    log_dpkg_keep: 7,
   });
   energy.value = 10;
   guardianLevel.value = 1;
@@ -246,10 +299,10 @@ function resetConfig() {
 
 const nodes = [
   { value: 'connection', label: '连接设置', level: 1, particleColor: '#00eaff', particleCount: 5, particleDelayBase: 0 },
-  { value: 'local-backup', label: '本地备份', level: 2, particleColor: '#ffd54f', particleCount: 6, particleDelayBase: 0.12 },
-  { value: 'remote-backup', label: '远程备份', level: 3, particleColor: '#4dd0e1', particleCount: 7, particleDelayBase: 0.18 },
-  { value: 'backup-config', label: '备份配置', level: 4, particleColor: '#ba68c8', particleCount: 5, particleDelayBase: 0.22 },
-  { value: 'restore', label: '恢复功能', level: 5, particleColor: '#66bb6a', particleCount: 6, particleDelayBase: 0.08 },
+  { value: 'local-backup', label: '备份目录', level: 2, particleColor: '#ffd54f', particleCount: 7, particleDelayBase: 0.12 },
+  { value: 'backup-config', label: '备份还原', level: 4, particleColor: '#ba68c8', particleCount: 5, particleDelayBase: 0.22 },
+  { value: 'cleanup', label: '系统设置', level: 6, particleColor: '#ffb300', particleCount: 6, particleDelayBase: 0.10 },
+  { value: 'declaration', label: '插件说明', level: 7, particleColor: '#90caf9', particleCount: 5, particleDelayBase: 0.15 },
 ];
 const activeNode = ref('connection');
 
@@ -641,70 +694,126 @@ onMounted(() => {
 });
 
 function getNavAvatarSVG(type) {
-  // 优化后：去掉大圆背景，放大Q版人物主体
   switch (type) {
-    case 'connection': // Q版大头猫
+    case 'connection':
       return `<svg width="38" height="38" viewBox="0 0 38 38">
-        <ellipse cx="19" cy="22" rx="15" ry="13" fill="#fff"/>
+        <ellipse cx="19" cy="22" rx="15" ry="13" fill="#e3f2fd"/>
         <ellipse cx="11" cy="14" rx="3.5" ry="6" fill="#00bcd4"/>
         <ellipse cx="27" cy="14" rx="3.5" ry="6" fill="#00bcd4"/>
-        <ellipse cx="15" cy="20" rx="3.2" ry="4.2" fill="#00bcd4"/>
-        <ellipse cx="23" cy="20" rx="3.2" ry="4.2" fill="#00bcd4"/>
-        <ellipse cx="15" cy="20" rx="1.1" ry="1.6" fill="#fff" opacity="0.7"/>
-        <ellipse cx="23" cy="20" rx="1.1" ry="1.6" fill="#fff" opacity="0.7"/>
-        <ellipse cx="19" cy="27" rx="2.2" ry="2.8" fill="#00bcd4"/>
-        <path d="M14 29 Q19 33 24 29" stroke="#00bcd4" stroke-width="1.5" fill="none"/>
+        <ellipse cx="19" cy="22" rx="8" ry="8" fill="#fff"/>
+        <ellipse cx="15" cy="22" rx="2" ry="3" fill="#2196f3"/>
+        <ellipse cx="23" cy="22" rx="2" ry="3" fill="#2196f3"/>
+        <ellipse cx="15" cy="22" rx="0.7" ry="1.2" fill="#fff" opacity="0.7"/>
+        <ellipse cx="23" cy="22" rx="0.7" ry="1.2" fill="#fff" opacity="0.7"/>
+        <ellipse cx="19" cy="28" rx="2.2" ry="1.2" fill="#2196f3"/>
+        <path d="M15 28 Q19 32 23 28" stroke="#2196f3" stroke-width="1.5" fill="none"/>
       </svg>`;
-    case 'local-backup': // Q版大头狗
+    case 'local-backup':
       return `<svg width="38" height="38" viewBox="0 0 38 38">
         <ellipse cx="19" cy="22" rx="15" ry="13" fill="#fffde7"/>
-        <ellipse cx="8" cy="16" rx="4" ry="7" fill="#ffe082"/>
-        <ellipse cx="30" cy="16" rx="4" ry="7" fill="#ffe082"/>
-        <ellipse cx="15" cy="21" rx="3.2" ry="4.2" fill="#ffb300"/>
-        <ellipse cx="23" cy="21" rx="3.2" ry="4.2" fill="#ffb300"/>
-        <ellipse cx="15" cy="21" rx="1.1" ry="1.6" fill="#fff" opacity="0.7"/>
-        <ellipse cx="23" cy="21" rx="1.1" ry="1.6" fill="#fff" opacity="0.7"/>
-        <ellipse cx="19" cy="28" rx="2.2" ry="2.8" fill="#ffb300"/>
-        <path d="M14 29 Q19 33 24 29" stroke="#ffb300" stroke-width="1.5" fill="none"/>
+        <ellipse cx="11" cy="14" rx="3.5" ry="6" fill="#ffd54f"/>
+        <ellipse cx="27" cy="14" rx="3.5" ry="6" fill="#ffd54f"/>
+        <ellipse cx="19" cy="22" rx="8" ry="8" fill="#fff"/>
+        <ellipse cx="15" cy="22" rx="2" ry="3" fill="#ffb300"/>
+        <ellipse cx="23" cy="22" rx="2" ry="3" fill="#ffb300"/>
+        <ellipse cx="15" cy="22" rx="0.7" ry="1.2" fill="#fff" opacity="0.7"/>
+        <ellipse cx="23" cy="22" rx="0.7" ry="1.2" fill="#fff" opacity="0.7"/>
+        <ellipse cx="19" cy="28" rx="2.2" ry="1.2" fill="#ffb300"/>
+        <path d="M15 28 Q19 32 23 28" stroke="#ffb300" stroke-width="1.5" fill="none"/>
       </svg>`;
-    case 'remote-backup': // Q版大头云朵精灵
+    case 'remote-backup':
       return `<svg width="38" height="38" viewBox="0 0 38 38">
-        <ellipse cx="19" cy="22" rx="15" ry="11" fill="#fff"/>
-        <ellipse cx="19" cy="13" rx="7" ry="3.5" fill="#b2ebf2"/>
-        <ellipse cx="15" cy="21" rx="3.2" ry="4.2" fill="#4dd0e1"/>
-        <ellipse cx="23" cy="21" rx="3.2" ry="4.2" fill="#4dd0e1"/>
-        <ellipse cx="15" cy="21" rx="1.1" ry="1.6" fill="#fff" opacity="0.7"/>
-        <ellipse cx="23" cy="21" rx="1.1" ry="1.6" fill="#fff" opacity="0.7"/>
-        <ellipse cx="19" cy="27" rx="2.2" ry="2.8" fill="#4dd0e1"/>
-        <path d="M14 28 Q19 32 24 28" stroke="#4dd0e1" stroke-width="1.5" fill="none"/>
+        <ellipse cx="19" cy="22" rx="15" ry="13" fill="#e3f2fd"/>
+        <ellipse cx="11" cy="14" rx="3.5" ry="6" fill="#4dd0e1"/>
+        <ellipse cx="27" cy="14" rx="3.5" ry="6" fill="#4dd0e1"/>
+        <ellipse cx="19" cy="22" rx="8" ry="8" fill="#fff"/>
+        <ellipse cx="15" cy="22" rx="2" ry="3" fill="#00bcd4"/>
+        <ellipse cx="23" cy="22" rx="2" ry="3" fill="#00bcd4"/>
+        <ellipse cx="15" cy="22" rx="0.7" ry="1.2" fill="#fff" opacity="0.7"/>
+        <ellipse cx="23" cy="22" rx="0.7" ry="1.2" fill="#fff" opacity="0.7"/>
+        <ellipse cx="19" cy="28" rx="2.2" ry="1.2" fill="#00bcd4"/>
+        <path d="M15 28 Q19 32 23 28" stroke="#00bcd4" stroke-width="1.5" fill="none"/>
       </svg>`;
-    case 'backup-config': // Q版大头齿轮怪
+    case 'backup-config':
       return `<svg width="38" height="38" viewBox="0 0 38 38">
-        <ellipse cx="19" cy="22" rx="13" ry="11" fill="#fff"/>
-        <g stroke="#ba68c8" stroke-width="2"><line x1="19" y1="7" x2="19" y2="13"/><line x1="19" y1="31" x2="19" y2="37"/><line x1="7" y1="22" x2="13" y2="22"/><line x1="25" y1="22" x2="31" y2="22"/></g>
-        <ellipse cx="15" cy="21" rx="2.7" ry="3.7" fill="#ba68c8"/>
-        <ellipse cx="23" cy="21" rx="2.7" ry="3.7" fill="#ba68c8"/>
-        <ellipse cx="15" cy="21" rx="0.9" ry="1.3" fill="#fff" opacity="0.7"/>
-        <ellipse cx="23" cy="21" rx="0.9" ry="1.3" fill="#fff" opacity="0.7"/>
-        <ellipse cx="19" cy="27" rx="1.8" ry="2.3" fill="#ba68c8"/>
-        <path d="M14 28 Q19 32 24 28" stroke="#ba68c8" stroke-width="1.2" fill="none"/>
+        <ellipse cx="19" cy="22" rx="15" ry="13" fill="#f3e5f5"/>
+        <ellipse cx="11" cy="14" rx="3.5" ry="6" fill="#ba68c8"/>
+        <ellipse cx="27" cy="14" rx="3.5" ry="6" fill="#ba68c8"/>
+        <ellipse cx="19" cy="22" rx="8" ry="8" fill="#fff"/>
+        <ellipse cx="15" cy="22" rx="2" ry="3" fill="#ba68c8"/>
+        <ellipse cx="23" cy="22" rx="2" ry="3" fill="#ba68c8"/>
+        <ellipse cx="15" cy="22" rx="0.7" ry="1.2" fill="#fff" opacity="0.7"/>
+        <ellipse cx="23" cy="22" rx="0.7" ry="1.2" fill="#fff" opacity="0.7"/>
+        <ellipse cx="19" cy="28" rx="2.2" ry="1.2" fill="#ba68c8"/>
+        <path d="M15 28 Q19 32 23 28" stroke="#ba68c8" stroke-width="1.5" fill="none"/>
       </svg>`;
-    case 'restore': // Q版大头绿龙
+    case 'restore':
       return `<svg width="38" height="38" viewBox="0 0 38 38">
-        <ellipse cx="19" cy="22" rx="15" ry="13" fill="#fff"/>
-        <polygon points="7,14 13,20 11,26" fill="#43a047"/>
-        <polygon points="31,20 37,14 27,26" fill="#43a047"/>
-        <ellipse cx="15" cy="21" rx="3.2" ry="4.2" fill="#43a047"/>
-        <ellipse cx="23" cy="21" rx="3.2" ry="4.2" fill="#43a047"/>
-        <ellipse cx="15" cy="21" rx="1.1" ry="1.6" fill="#fff" opacity="0.7"/>
-        <ellipse cx="23" cy="21" rx="1.1" ry="1.6" fill="#fff" opacity="0.7"/>
-        <ellipse cx="19" cy="27" rx="2.2" ry="2.8" fill="#43a047"/>
-        <path d="M14 29 Q19 33 24 29" stroke="#43a047" stroke-width="1.5" fill="none"/>
+        <ellipse cx="19" cy="22" rx="15" ry="13" fill="#e0f2f1"/>
+        <ellipse cx="11" cy="14" rx="3.5" ry="6" fill="#66bb6a"/>
+        <ellipse cx="27" cy="14" rx="3.5" ry="6" fill="#66bb6a"/>
+        <ellipse cx="19" cy="22" rx="8" ry="8" fill="#fff"/>
+        <ellipse cx="15" cy="22" rx="2" ry="3" fill="#43a047"/>
+        <ellipse cx="23" cy="22" rx="2" ry="3" fill="#43a047"/>
+        <ellipse cx="15" cy="22" rx="0.7" ry="1.2" fill="#fff" opacity="0.7"/>
+        <ellipse cx="23" cy="22" rx="0.7" ry="1.2" fill="#fff" opacity="0.7"/>
+        <ellipse cx="19" cy="28" rx="2.2" ry="1.2" fill="#43a047"/>
+        <path d="M15 28 Q19 32 23 28" stroke="#43a047" stroke-width="1.5" fill="none"/>
+      </svg>`;
+    case 'cleanup': // 系统设置分区Q版头像
+      return `<svg width="38" height="38" viewBox="0 0 38 38">
+        <ellipse cx="19" cy="22" rx="15" ry="13" fill="#fff3e0"/>
+        <ellipse cx="11" cy="14" rx="3.5" ry="6" fill="#ffb300"/>
+        <ellipse cx="27" cy="14" rx="3.5" ry="6" fill="#ffb300"/>
+        <ellipse cx="19" cy="22" rx="8" ry="8" fill="#fff"/>
+        <ellipse cx="15" cy="22" rx="2" ry="3" fill="#ff9800"/>
+        <ellipse cx="23" cy="22" rx="2" ry="3" fill="#ff9800"/>
+        <ellipse cx="15" cy="22" rx="0.7" ry="1.2" fill="#fff" opacity="0.7"/>
+        <ellipse cx="23" cy="22" rx="0.7" ry="1.2" fill="#fff" opacity="0.7"/>
+        <ellipse cx="19" cy="28" rx="2.2" ry="1.2" fill="#ff9800"/>
+        <rect x="16" y="28" width="6" height="3" rx="1.5" fill="#ffb300"/>
+        <rect x="22" y="28" width="6" height="3" rx="1.5" fill="#ffb300"/>
+        <ellipse cx="19" cy="32" rx="2.2" ry="1.2" fill="#ffb300"/>
+        <ellipse cx="19" cy="34" rx="2.2" ry="0.7" fill="#ffb300"/>
+        <ellipse cx="19" cy="36" rx="2.2" ry="0.5" fill="#ff9800"/>
+      </svg>`;
+    case 'declaration': // 插件说明分区Q版头像
+      return `<svg width="38" height="38" viewBox="0 0 38 38">
+        <ellipse cx="19" cy="22" rx="15" ry="13" fill="#e3f2fd"/>
+        <ellipse cx="11" cy="14" rx="3.5" ry="6" fill="#90caf9"/>
+        <ellipse cx="27" cy="14" rx="3.5" ry="6" fill="#90caf9"/>
+        <ellipse cx="19" cy="22" rx="8" ry="8" fill="#fff"/>
+        <ellipse cx="15" cy="22" rx="2" ry="3" fill="#1976d2"/>
+        <ellipse cx="23" cy="22" rx="2" ry="3" fill="#1976d2"/>
+        <ellipse cx="15" cy="22" rx="0.7" ry="1.2" fill="#fff" opacity="0.7"/>
+        <ellipse cx="23" cy="22" rx="0.7" ry="1.2" fill="#fff" opacity="0.7"/>
+        <ellipse cx="19" cy="28" rx="2.2" ry="1.2" fill="#1976d2"/>
+        <circle cx="19" cy="32" r="2" fill="#90caf9"/>
+        <rect x="17" y="34" width="4" height="2" rx="1" fill="#90caf9"/>
       </svg>`;
     default:
       return '';
   }
 }
+
+ref(false);
+
+// 新增：切换清理系统日志开关后立即生效
+watch(() => config.enable_log_cleanup, async (val, oldVal) => {
+  if (val === oldVal) return;
+  try {
+    await props.api.post('plugin/ProxmoxVEBackup/save_config', { enable_log_cleanup: val });
+    // 可选：emit 事件通知父组件刷新状态
+    emit && emit('refreshStatus');
+    if (typeof $snackbar !== 'undefined') {
+      $snackbar.success('清理系统日志开关已生效');
+    }
+  } catch (e) {
+    if (typeof $snackbar !== 'undefined') {
+      $snackbar.error('保存清理系统日志开关失败');
+    }
+  }
+});
 
 return (_ctx, _cache) => {
   const _component_v_progress_circular = _resolveComponent("v-progress-circular");
@@ -716,6 +825,7 @@ return (_ctx, _cache) => {
   const _component_VCronField = _resolveComponent("VCronField");
   const _component_v_select = _resolveComponent("v-select");
   const _component_v_alert = _resolveComponent("v-alert");
+  const _component_v_divider = _resolveComponent("v-divider");
   const _component_v_btn = _resolveComponent("v-btn");
 
   return (_openBlock(), _createElementBlock(_Fragment, null, [
@@ -743,7 +853,7 @@ return (_ctx, _cache) => {
             color: "amber",
             size: "20"
           }, {
-            default: _withCtx(() => _cache[44] || (_cache[44] = [
+            default: _withCtx(() => _cache[51] || (_cache[51] = [
               _createTextVNode("mdi-crown")
             ])),
             _: 1
@@ -760,7 +870,7 @@ return (_ctx, _cache) => {
                         color: "primary",
                         size: "18"
                       }, {
-                        default: _withCtx(() => _cache[45] || (_cache[45] = [
+                        default: _withCtx(() => _cache[52] || (_cache[52] = [
                           _createTextVNode("mdi-emoticon-happy")
                         ])),
                         _: 1
@@ -771,7 +881,7 @@ return (_ctx, _cache) => {
                           color: "yellow",
                           size: "18"
                         }, {
-                          default: _withCtx(() => _cache[46] || (_cache[46] = [
+                          default: _withCtx(() => _cache[53] || (_cache[53] = [
                             _createTextVNode("mdi-flash")
                           ])),
                           _: 1
@@ -782,7 +892,7 @@ return (_ctx, _cache) => {
                             color: "amber",
                             size: "18"
                           }, {
-                            default: _withCtx(() => _cache[47] || (_cache[47] = [
+                            default: _withCtx(() => _cache[54] || (_cache[54] = [
                               _createTextVNode("mdi-star")
                             ])),
                             _: 1
@@ -795,7 +905,7 @@ return (_ctx, _cache) => {
           _: 1
         })
       ]),
-      _cache[48] || (_cache[48] = _createElementVNode("div", { class: "plugin-title" }, "PVE虚拟机守护神 - 备份插件", -1))
+      _cache[55] || (_cache[55] = _createElementVNode("div", { class: "plugin-title" }, "PVE虚拟机守护神 - 备份插件", -1))
     ]),
     _createElementVNode("div", _hoisted_6, [
       _createElementVNode("div", _hoisted_7, [
@@ -803,12 +913,12 @@ return (_ctx, _cache) => {
           class: "mr-2",
           color: "primary"
         }, {
-          default: _withCtx(() => _cache[49] || (_cache[49] = [
+          default: _withCtx(() => _cache[56] || (_cache[56] = [
             _createTextVNode("mdi-tune")
           ])),
           _: 1
         }),
-        _cache[50] || (_cache[50] = _createTextVNode(" 基本设置 "))
+        _cache[57] || (_cache[57] = _createTextVNode(" 基本设置 "))
       ]),
       _createVNode(_component_v_row, { dense: "" }, {
         default: _withCtx(() => [
@@ -949,12 +1059,12 @@ return (_ctx, _cache) => {
           }, {
             default: _withCtx(() => [
               _createVNode(_component_v_icon, { left: "" }, {
-                default: _withCtx(() => _cache[51] || (_cache[51] = [
+                default: _withCtx(() => _cache[58] || (_cache[58] = [
                   _createTextVNode("mdi-alert")
                 ])),
                 _: 1
               }),
-              _cache[52] || (_cache[52] = _createTextVNode(" 未设置PVE主机地址，插件将无法正常连接！ "))
+              _cache[59] || (_cache[59] = _createTextVNode(" 未设置PVE主机地址，插件将无法正常连接！ "))
             ]),
             _: 1
           }))
@@ -968,8 +1078,12 @@ return (_ctx, _cache) => {
           onClick: $event => (activeNode.value = node.value)
         }, [
           _createElementVNode("div", _hoisted_10, [
-            (_openBlock(), _createElementBlock("svg", _hoisted_11, [
-              _cache[53] || (_cache[53] = _createStaticVNode("<defs data-v-735df811><radialGradient id=\"crystal-gradient\" cx=\"50%\" cy=\"50%\" r=\"50%\" data-v-735df811><stop offset=\"0%\" stop-color=\"#fff\" stop-opacity=\"0.95\" data-v-735df811></stop><stop offset=\"60%\" stop-color=\"#b2ebf2\" stop-opacity=\"0.7\" data-v-735df811></stop><stop offset=\"100%\" stop-color=\"#00eaff\" stop-opacity=\"0.45\" data-v-735df811></stop></radialGradient></defs><circle cx=\"50\" cy=\"50\" r=\"44\" fill=\"url(#crystal-gradient)\" data-v-735df811></circle><ellipse cx=\"38\" cy=\"32\" rx=\"16\" ry=\"7\" fill=\"#fff\" opacity=\"0.35\" data-v-735df811></ellipse>", 3)),
+            _createElementVNode("div", {
+              class: "crystal-avatar",
+              innerHTML: getNavAvatarSVG(node.value)
+            }, null, 8, _hoisted_11),
+            (_openBlock(), _createElementBlock("svg", _hoisted_12, [
+              _cache[60] || (_cache[60] = _createStaticVNode("<defs data-v-1d6cd9dc><radialGradient id=\"crystal-gradient\" cx=\"50%\" cy=\"50%\" r=\"50%\" data-v-1d6cd9dc><stop offset=\"0%\" stop-color=\"#fff\" stop-opacity=\"0.95\" data-v-1d6cd9dc></stop><stop offset=\"60%\" stop-color=\"#b2ebf2\" stop-opacity=\"0.7\" data-v-1d6cd9dc></stop><stop offset=\"100%\" stop-color=\"#00eaff\" stop-opacity=\"0.45\" data-v-1d6cd9dc></stop></radialGradient></defs><circle cx=\"50\" cy=\"50\" r=\"44\" fill=\"url(#crystal-gradient)\" data-v-1d6cd9dc></circle><ellipse cx=\"38\" cy=\"32\" rx=\"16\" ry=\"7\" fill=\"#fff\" opacity=\"0.35\" data-v-1d6cd9dc></ellipse>", 3)),
               _createElementVNode("g", null, [
                 (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(node.particleCount, (n) => {
                   return (_openBlock(), _createElementBlock("circle", {
@@ -986,15 +1100,11 @@ return (_ctx, _cache) => {
                       dur: "1.2s",
                       begin: (n*node.particleDelayBase)+'s',
                       repeatCount: "indefinite"
-                    }, null, 8, _hoisted_13)
-                  ], 8, _hoisted_12))
+                    }, null, 8, _hoisted_14)
+                  ], 8, _hoisted_13))
                 }), 128))
               ])
-            ])),
-            _createElementVNode("div", {
-              class: "crystal-avatar",
-              innerHTML: getNavAvatarSVG(node.value)
-            }, null, 8, _hoisted_14)
+            ]))
           ]),
           _createElementVNode("div", _hoisted_15, _toDisplayString(node.label), 1)
         ], 10, _hoisted_9)
@@ -1155,10 +1265,189 @@ return (_ctx, _cache) => {
                   })
                 ]),
                 _: 1
+              }),
+              _createVNode(_component_v_divider, { class: "my-2" }),
+              _createVNode(_component_v_row, { dense: "" }, {
+                default: _withCtx(() => [
+                  _createVNode(_component_v_col, {
+                    cols: "12",
+                    md: "4"
+                  }, {
+                    default: _withCtx(() => [
+                      _createVNode(_component_v_switch, {
+                        modelValue: config.enable_webdav,
+                        "onUpdate:modelValue": _cache[20] || (_cache[20] = $event => ((config.enable_webdav) = $event)),
+                        label: "启用WebDAV备份",
+                        color: "cyan",
+                        "prepend-icon": "mdi-cloud-upload",
+                        class: "tight-switch",
+                        onChange: _cache[21] || (_cache[21] = $event => (onFeatureSwitch('enable_webdav', $event)))
+                      }, null, 8, ["modelValue"])
+                    ]),
+                    _: 1
+                  }),
+                  _createVNode(_component_v_col, {
+                    cols: "12",
+                    md: "5"
+                  }, {
+                    default: _withCtx(() => [
+                      _createVNode(_component_v_text_field, {
+                        modelValue: config.webdav_url,
+                        "onUpdate:modelValue": _cache[22] || (_cache[22] = $event => ((config.webdav_url) = $event)),
+                        label: "WebDAV服务器地址",
+                        "prepend-inner-icon": "mdi-cloud",
+                        dense: ""
+                      }, null, 8, ["modelValue"])
+                    ]),
+                    _: 1
+                  })
+                ]),
+                _: 1
+              }),
+              _createVNode(_component_v_row, { dense: "" }, {
+                default: _withCtx(() => [
+                  _createVNode(_component_v_col, {
+                    cols: "12",
+                    md: "6"
+                  }, {
+                    default: _withCtx(() => [
+                      _createVNode(_component_v_text_field, {
+                        modelValue: config.webdav_username,
+                        "onUpdate:modelValue": _cache[23] || (_cache[23] = $event => ((config.webdav_username) = $event)),
+                        label: "WebDAV用户名",
+                        "prepend-inner-icon": "mdi-account",
+                        dense: ""
+                      }, null, 8, ["modelValue"])
+                    ]),
+                    _: 1
+                  }),
+                  _createVNode(_component_v_col, {
+                    cols: "12",
+                    md: "6"
+                  }, {
+                    default: _withCtx(() => [
+                      _createVNode(_component_v_text_field, {
+                        modelValue: config.webdav_password,
+                        "onUpdate:modelValue": _cache[24] || (_cache[24] = $event => ((config.webdav_password) = $event)),
+                        label: "WebDAV密码",
+                        type: showWebdavPassword.value?"text":"password",
+                        "append-inner-icon": showWebdavPassword.value?"mdi-eye-off":"mdi-eye",
+                        "onClick:appendInner": _cache[25] || (_cache[25] = $event => (_ctx.$emit("toggle-webdav-password"))),
+                        "prepend-inner-icon": "mdi-lock",
+                        dense: ""
+                      }, null, 8, ["modelValue", "type", "append-inner-icon"])
+                    ]),
+                    _: 1
+                  })
+                ]),
+                _: 1
+              }),
+              _createVNode(_component_v_row, { dense: "" }, {
+                default: _withCtx(() => [
+                  _createVNode(_component_v_col, {
+                    cols: "12",
+                    md: "8"
+                  }, {
+                    default: _withCtx(() => [
+                      _createVNode(_component_v_text_field, {
+                        modelValue: config.webdav_path,
+                        "onUpdate:modelValue": _cache[26] || (_cache[26] = $event => ((config.webdav_path) = $event)),
+                        label: "WebDAV备份路径",
+                        "prepend-inner-icon": "mdi-folder-network",
+                        dense: ""
+                      }, null, 8, ["modelValue"])
+                    ]),
+                    _: 1
+                  }),
+                  _createVNode(_component_v_col, {
+                    cols: "12",
+                    md: "4"
+                  }, {
+                    default: _withCtx(() => [
+                      _createVNode(_component_v_text_field, {
+                        modelValue: config.webdav_keep_backup_num,
+                        "onUpdate:modelValue": _cache[27] || (_cache[27] = $event => ((config.webdav_keep_backup_num) = $event)),
+                        modelModifiers: { number: true },
+                        label: "WebDAV备份保留数量",
+                        type: "number",
+                        min: "1",
+                        "prepend-inner-icon": "mdi-counter",
+                        dense: ""
+                      }, null, 8, ["modelValue"])
+                    ]),
+                    _: 1
+                  })
+                ]),
+                _: 1
               })
             ]))
-          : (activeNode.value === 'remote-backup')
+          : (activeNode.value === 'backup-config')
             ? (_openBlock(), _createElementBlock("div", _hoisted_19, [
+                _cache[62] || (_cache[62] = _createElementVNode("div", { class: "switch-group-title" }, "备份选项", -1)),
+                _createElementVNode("div", _hoisted_20, [
+                  _createElementVNode("div", _hoisted_21, [
+                    _createVNode(_component_v_switch, {
+                      modelValue: config.auto_delete_after_download,
+                      "onUpdate:modelValue": _cache[28] || (_cache[28] = $event => ((config.auto_delete_after_download) = $event)),
+                      label: "下载后自动删除PVE备份",
+                      color: "error",
+                      "prepend-icon": "mdi-delete-forever",
+                      class: "tight-switch",
+                      onChange: _cache[29] || (_cache[29] = $event => (onFeatureSwitch('auto_delete_after_download', $event)))
+                    }, null, 8, ["modelValue"])
+                  ]),
+                  _createElementVNode("div", _hoisted_22, [
+                    _createVNode(_component_v_switch, {
+                      modelValue: config.download_all_backups,
+                      "onUpdate:modelValue": _cache[30] || (_cache[30] = $event => ((config.download_all_backups) = $event)),
+                      label: "下载所有备份文件（多VM时）",
+                      color: "info",
+                      "prepend-icon": "mdi-download-multiple",
+                      class: "tight-switch",
+                      onChange: _cache[31] || (_cache[31] = $event => (onFeatureSwitch('download_all_backups', $event)))
+                    }, null, 8, ["modelValue"])
+                  ]),
+                  _cache[61] || (_cache[61] = _createElementVNode("div", { class: "switch-flex-item" }, null, -1))
+                ]),
+                _cache[63] || (_cache[63] = _createElementVNode("div", {
+                  class: "switch-group-title",
+                  style: {"margin-top":"8px"}
+                }, "恢复选项", -1)),
+                _createElementVNode("div", _hoisted_23, [
+                  _createElementVNode("div", _hoisted_24, [
+                    _createVNode(_component_v_switch, {
+                      modelValue: config.enable_restore,
+                      "onUpdate:modelValue": _cache[32] || (_cache[32] = $event => ((config.enable_restore) = $event)),
+                      label: "启用恢复",
+                      color: "primary",
+                      "prepend-icon": "mdi-restore",
+                      class: "tight-switch",
+                      onChange: _cache[33] || (_cache[33] = $event => (onFeatureSwitch('enable_restore', $event)))
+                    }, null, 8, ["modelValue"])
+                  ]),
+                  _createElementVNode("div", _hoisted_25, [
+                    _createVNode(_component_v_switch, {
+                      modelValue: config.restore_force,
+                      "onUpdate:modelValue": _cache[34] || (_cache[34] = $event => ((config.restore_force) = $event)),
+                      label: "强制恢复",
+                      color: "error",
+                      "prepend-icon": "mdi-alert-circle",
+                      class: "tight-switch",
+                      onChange: _cache[35] || (_cache[35] = $event => (onFeatureSwitch('restore_force', $event)))
+                    }, null, 8, ["modelValue"])
+                  ]),
+                  _createElementVNode("div", _hoisted_26, [
+                    _createVNode(_component_v_switch, {
+                      modelValue: config.restore_skip_existing,
+                      "onUpdate:modelValue": _cache[36] || (_cache[36] = $event => ((config.restore_skip_existing) = $event)),
+                      label: "跳过已存在的VM",
+                      color: "warning",
+                      "prepend-icon": "mdi-skip-next",
+                      class: "tight-switch",
+                      onChange: _cache[37] || (_cache[37] = $event => (onFeatureSwitch('restore_skip_existing', $event)))
+                    }, null, 8, ["modelValue"])
+                  ])
+                ]),
                 _createVNode(_component_v_row, { dense: "" }, {
                   default: _withCtx(() => [
                     _createVNode(_component_v_col, {
@@ -1166,28 +1455,42 @@ return (_ctx, _cache) => {
                       md: "4"
                     }, {
                       default: _withCtx(() => [
-                        _createVNode(_component_v_switch, {
-                          modelValue: config.enable_webdav,
-                          "onUpdate:modelValue": _cache[20] || (_cache[20] = $event => ((config.enable_webdav) = $event)),
-                          label: "启用WebDAV备份",
-                          color: "cyan",
-                          "prepend-icon": "mdi-cloud-upload",
-                          class: "tight-switch",
-                          onChange: _cache[21] || (_cache[21] = $event => (onFeatureSwitch('enable_webdav', $event)))
+                        _createVNode(_component_v_text_field, {
+                          modelValue: config.storage_name,
+                          "onUpdate:modelValue": _cache[38] || (_cache[38] = $event => ((config.storage_name) = $event)),
+                          label: "存储名称",
+                          "prepend-inner-icon": "mdi-database",
+                          dense: ""
                         }, null, 8, ["modelValue"])
                       ]),
                       _: 1
                     }),
                     _createVNode(_component_v_col, {
                       cols: "12",
-                      md: "5"
+                      md: "4"
                     }, {
                       default: _withCtx(() => [
                         _createVNode(_component_v_text_field, {
-                          modelValue: config.webdav_url,
-                          "onUpdate:modelValue": _cache[22] || (_cache[22] = $event => ((config.webdav_url) = $event)),
-                          label: "WebDAV服务器地址",
-                          "prepend-inner-icon": "mdi-cloud",
+                          modelValue: config.backup_vmid,
+                          "onUpdate:modelValue": _cache[39] || (_cache[39] = $event => ((config.backup_vmid) = $event)),
+                          label: "要备份的容器ID",
+                          "prepend-inner-icon": "mdi-numeric",
+                          dense: ""
+                        }, null, 8, ["modelValue"])
+                      ]),
+                      _: 1
+                    }),
+                    _createVNode(_component_v_col, {
+                      cols: "12",
+                      md: "4"
+                    }, {
+                      default: _withCtx(() => [
+                        _createVNode(_component_v_select, {
+                          modelValue: config.backup_mode,
+                          "onUpdate:modelValue": _cache[40] || (_cache[40] = $event => ((config.backup_mode) = $event)),
+                          items: backupModeOptions,
+                          label: "备份模式",
+                          "prepend-inner-icon": "mdi-camera-timer",
                           dense: ""
                         }, null, 8, ["modelValue"])
                       ]),
@@ -1200,70 +1503,15 @@ return (_ctx, _cache) => {
                   default: _withCtx(() => [
                     _createVNode(_component_v_col, {
                       cols: "12",
-                      md: "6"
-                    }, {
-                      default: _withCtx(() => [
-                        _createVNode(_component_v_text_field, {
-                          modelValue: config.webdav_username,
-                          "onUpdate:modelValue": _cache[23] || (_cache[23] = $event => ((config.webdav_username) = $event)),
-                          label: "WebDAV用户名",
-                          "prepend-inner-icon": "mdi-account",
-                          dense: ""
-                        }, null, 8, ["modelValue"])
-                      ]),
-                      _: 1
-                    }),
-                    _createVNode(_component_v_col, {
-                      cols: "12",
-                      md: "6"
-                    }, {
-                      default: _withCtx(() => [
-                        _createVNode(_component_v_text_field, {
-                          modelValue: config.webdav_password,
-                          "onUpdate:modelValue": _cache[24] || (_cache[24] = $event => ((config.webdav_password) = $event)),
-                          label: "WebDAV密码",
-                          type: showWebdavPassword.value?"text":"password",
-                          "append-inner-icon": showWebdavPassword.value?"mdi-eye-off":"mdi-eye",
-                          "onClick:appendInner": _cache[25] || (_cache[25] = $event => (showWebdavPassword.value=!showWebdavPassword.value)),
-                          "prepend-inner-icon": "mdi-lock",
-                          dense: ""
-                        }, null, 8, ["modelValue", "type", "append-inner-icon"])
-                      ]),
-                      _: 1
-                    })
-                  ]),
-                  _: 1
-                }),
-                _createVNode(_component_v_row, { dense: "" }, {
-                  default: _withCtx(() => [
-                    _createVNode(_component_v_col, {
-                      cols: "12",
-                      md: "8"
-                    }, {
-                      default: _withCtx(() => [
-                        _createVNode(_component_v_text_field, {
-                          modelValue: config.webdav_path,
-                          "onUpdate:modelValue": _cache[26] || (_cache[26] = $event => ((config.webdav_path) = $event)),
-                          label: "WebDAV备份路径",
-                          "prepend-inner-icon": "mdi-folder-network",
-                          dense: ""
-                        }, null, 8, ["modelValue"])
-                      ]),
-                      _: 1
-                    }),
-                    _createVNode(_component_v_col, {
-                      cols: "12",
                       md: "4"
                     }, {
                       default: _withCtx(() => [
-                        _createVNode(_component_v_text_field, {
-                          modelValue: config.webdav_keep_backup_num,
-                          "onUpdate:modelValue": _cache[27] || (_cache[27] = $event => ((config.webdav_keep_backup_num) = $event)),
-                          modelModifiers: { number: true },
-                          label: "WebDAV备份保留数量",
-                          type: "number",
-                          min: "1",
-                          "prepend-inner-icon": "mdi-counter",
+                        _createVNode(_component_v_select, {
+                          modelValue: config.compress_mode,
+                          "onUpdate:modelValue": _cache[41] || (_cache[41] = $event => ((config.compress_mode) = $event)),
+                          items: compressModeOptions,
+                          label: "压缩模式",
+                          "prepend-inner-icon": "mdi-zip-box",
                           dense: ""
                         }, null, 8, ["modelValue"])
                       ]),
@@ -1273,224 +1521,308 @@ return (_ctx, _cache) => {
                   _: 1
                 })
               ]))
-            : (activeNode.value === 'backup-config')
-              ? (_openBlock(), _createElementBlock("div", _hoisted_20, [
+            : (activeNode.value === 'cleanup')
+              ? (_openBlock(), _createElementBlock("div", _hoisted_27, [
+                  _createElementVNode("div", _hoisted_28, [
+                    _createVNode(_component_v_icon, {
+                      size: "18",
+                      color: "warning",
+                      class: "mr-2"
+                    }, {
+                      default: _withCtx(() => _cache[64] || (_cache[64] = [
+                        _createTextVNode("mdi-alert")
+                      ])),
+                      _: 1
+                    }),
+                    _cache[65] || (_cache[65] = _createElementVNode("span", { style: {"font-size":"1.08em"} }, "本分区所有操作将直接作用于PVE主机系统，部分操作不可逆，请务必谨慎操作并提前做好备份！", -1))
+                  ]),
                   _createVNode(_component_v_row, { dense: "" }, {
+                    default: _withCtx(() => [
+                      _createElementVNode("div", _hoisted_29, [
+                        _createVNode(_component_v_switch, {
+                          modelValue: config.auto_cleanup_tmp,
+                          "onUpdate:modelValue": _cache[42] || (_cache[42] = $event => ((config.auto_cleanup_tmp) = $event)),
+                          label: "清理临时空间",
+                          color: "warning",
+                          "prepend-icon": "mdi-delete-sweep"
+                        }, null, 8, ["modelValue"]),
+                        _createVNode(_component_v_switch, {
+                          modelValue: config.enable_log_cleanup,
+                          "onUpdate:modelValue": _cache[43] || (_cache[43] = $event => ((config.enable_log_cleanup) = $event)),
+                          label: "清理系统日记",
+                          color: "info",
+                          "prepend-icon": "mdi-file-document-multiple"
+                        }, null, 8, ["modelValue"]),
+                        _createVNode(_component_v_switch, {
+                          modelValue: config.cleanup_template_images,
+                          "onUpdate:modelValue": _cache[44] || (_cache[44] = $event => ((config.cleanup_template_images) = $event)),
+                          label: "启用镜像模板",
+                          color: "primary",
+                          "prepend-icon": "mdi-cube-outline",
+                          class: "tight-switch"
+                        }, null, 8, ["modelValue"])
+                      ])
+                    ]),
+                    _: 1
+                  }),
+                  _createVNode(_component_v_row, {
+                    dense: "",
+                    class: "mt-4"
+                  }, {
                     default: _withCtx(() => [
                       _createVNode(_component_v_col, {
                         cols: "12",
-                        md: "4"
+                        md: "3"
                       }, {
                         default: _withCtx(() => [
                           _createVNode(_component_v_text_field, {
-                            modelValue: config.storage_name,
-                            "onUpdate:modelValue": _cache[28] || (_cache[28] = $event => ((config.storage_name) = $event)),
-                            label: "存储名称",
-                            "prepend-inner-icon": "mdi-database",
+                            modelValue: config.log_journal_days,
+                            "onUpdate:modelValue": _cache[45] || (_cache[45] = $event => ((config.log_journal_days) = $event)),
+                            modelModifiers: { number: true },
+                            disabled: !config.enable_log_cleanup,
+                            label: "journalctl保留天数",
+                            type: "number",
+                            min: "1",
+                            "prepend-inner-icon": "mdi-calendar-clock",
+                            hint: "仅清理早于N天的systemd日志，留空或0为全部清理",
+                            "persistent-hint": "",
                             dense: ""
-                          }, null, 8, ["modelValue"])
+                          }, null, 8, ["modelValue", "disabled"])
                         ]),
                         _: 1
                       }),
                       _createVNode(_component_v_col, {
                         cols: "12",
-                        md: "4"
+                        md: "3"
                       }, {
                         default: _withCtx(() => [
                           _createVNode(_component_v_text_field, {
-                            modelValue: config.backup_vmid,
-                            "onUpdate:modelValue": _cache[29] || (_cache[29] = $event => ((config.backup_vmid) = $event)),
-                            label: "要备份的容器ID",
-                            "prepend-inner-icon": "mdi-numeric",
+                            modelValue: config.log_vzdump_keep,
+                            "onUpdate:modelValue": _cache[46] || (_cache[46] = $event => ((config.log_vzdump_keep) = $event)),
+                            modelModifiers: { number: true },
+                            disabled: !config.enable_log_cleanup,
+                            label: "/var/log/vzdump保留最新N个",
+                            type: "number",
+                            min: "0",
+                            "prepend-inner-icon": "mdi-file-document",
+                            hint: "0为全部清理",
+                            "persistent-hint": "",
                             dense: ""
-                          }, null, 8, ["modelValue"])
+                          }, null, 8, ["modelValue", "disabled"])
                         ]),
                         _: 1
                       }),
                       _createVNode(_component_v_col, {
                         cols: "12",
-                        md: "4"
+                        md: "3"
                       }, {
                         default: _withCtx(() => [
-                          _createVNode(_component_v_select, {
-                            modelValue: config.backup_mode,
-                            "onUpdate:modelValue": _cache[30] || (_cache[30] = $event => ((config.backup_mode) = $event)),
-                            items: backupModeOptions,
-                            label: "备份模式",
-                            "prepend-inner-icon": "mdi-camera-timer",
+                          _createVNode(_component_v_text_field, {
+                            modelValue: config.log_pve_keep,
+                            "onUpdate:modelValue": _cache[47] || (_cache[47] = $event => ((config.log_pve_keep) = $event)),
+                            modelModifiers: { number: true },
+                            disabled: !config.enable_log_cleanup,
+                            label: "/var/log/pve保留最新N个",
+                            type: "number",
+                            min: "0",
+                            "prepend-inner-icon": "mdi-file-document",
+                            hint: "0为全部清理",
+                            "persistent-hint": "",
                             dense: ""
-                          }, null, 8, ["modelValue"])
+                          }, null, 8, ["modelValue", "disabled"])
+                        ]),
+                        _: 1
+                      }),
+                      _createVNode(_component_v_col, {
+                        cols: "12",
+                        md: "3"
+                      }, {
+                        default: _withCtx(() => [
+                          _createVNode(_component_v_text_field, {
+                            modelValue: config.log_dpkg_keep,
+                            "onUpdate:modelValue": _cache[48] || (_cache[48] = $event => ((config.log_dpkg_keep) = $event)),
+                            modelModifiers: { number: true },
+                            disabled: !config.enable_log_cleanup,
+                            label: "/var/log/dpkg.log保留最新N个",
+                            type: "number",
+                            min: "0",
+                            "prepend-inner-icon": "mdi-file-document",
+                            hint: "0为全部清理",
+                            "persistent-hint": "",
+                            dense: ""
+                          }, null, 8, ["modelValue", "disabled"])
                         ]),
                         _: 1
                       })
                     ]),
                     _: 1
                   }),
-                  _createVNode(_component_v_row, { dense: "" }, {
-                    default: _withCtx(() => [
-                      _createVNode(_component_v_col, {
-                        cols: "12",
-                        md: "4"
+                  _createElementVNode("ul", _hoisted_30, [
+                    _createElementVNode("li", null, [
+                      _createVNode(_component_v_icon, {
+                        size: "16",
+                        color: "warning",
+                        class: "dot-icon"
                       }, {
-                        default: _withCtx(() => [
-                          _createVNode(_component_v_select, {
-                            modelValue: config.compress_mode,
-                            "onUpdate:modelValue": _cache[31] || (_cache[31] = $event => ((config.compress_mode) = $event)),
-                            items: compressModeOptions,
-                            label: "压缩模式",
-                            "prepend-inner-icon": "mdi-zip-box",
-                            dense: ""
-                          }, null, 8, ["modelValue"])
-                        ]),
+                        default: _withCtx(() => _cache[66] || (_cache[66] = [
+                          _createTextVNode("mdi-checkbox-blank-circle")
+                        ])),
                         _: 1
                       }),
-                      _createVNode(_component_v_col, {
-                        cols: "12",
-                        md: "4"
-                      }, {
-                        default: _withCtx(() => [
-                          _createVNode(_component_v_switch, {
-                            modelValue: config.auto_delete_after_download,
-                            "onUpdate:modelValue": _cache[32] || (_cache[32] = $event => ((config.auto_delete_after_download) = $event)),
-                            label: "下载后自动删除PVE备份",
-                            color: "error",
-                            "prepend-icon": "mdi-delete-forever",
-                            class: "tight-switch",
-                            onChange: _cache[33] || (_cache[33] = $event => (onFeatureSwitch('auto_delete_after_download', $event)))
-                          }, null, 8, ["modelValue"])
-                        ]),
-                        _: 1
-                      }),
-                      _createVNode(_component_v_col, {
-                        cols: "12",
-                        md: "4"
-                      }, {
-                        default: _withCtx(() => [
-                          _createVNode(_component_v_switch, {
-                            modelValue: config.download_all_backups,
-                            "onUpdate:modelValue": _cache[34] || (_cache[34] = $event => ((config.download_all_backups) = $event)),
-                            label: "下载所有备份文件（多VM时）",
-                            color: "info",
-                            "prepend-icon": "mdi-download-multiple",
-                            class: "tight-switch",
-                            onChange: _cache[35] || (_cache[35] = $event => (onFeatureSwitch('download_all_backups', $event)))
-                          }, null, 8, ["modelValue"])
-                        ]),
-                        _: 1
-                      })
+                      _cache[67] || (_cache[67] = _createTextVNode(" 清理临时空间功能会删除系统 /var/lib/vz/dump/ 下所有以 .tmp 结尾的文件和目录（含临时备份缓存）。 "))
                     ]),
-                    _: 1
-                  })
+                    _createElementVNode("li", null, [
+                      _createVNode(_component_v_icon, {
+                        size: "16",
+                        color: "info",
+                        class: "dot-icon"
+                      }, {
+                        default: _withCtx(() => _cache[68] || (_cache[68] = [
+                          _createTextVNode("mdi-checkbox-blank-circle")
+                        ])),
+                        _: 1
+                      }),
+                      _cache[69] || (_cache[69] = _createTextVNode(" 系统日志功能清理不可逆，请谨慎操作。journalctl 支持按天保留，其它日志只能保留最新N个或全部清理。 "))
+                    ]),
+                    _createElementVNode("li", null, [
+                      _createVNode(_component_v_icon, {
+                        size: "16",
+                        color: "primary",
+                        class: "dot-icon"
+                      }, {
+                        default: _withCtx(() => _cache[70] || (_cache[70] = [
+                          _createTextVNode("mdi-checkbox-blank-circle")
+                        ])),
+                        _: 1
+                      }),
+                      _cache[71] || (_cache[71] = _createTextVNode(" 镜像模板功能启用后，可在状态页管理ISO镜像和CT模板。关闭后相关操作将被禁用。 "))
+                    ])
+                  ])
                 ]))
-              : (activeNode.value === 'restore')
-                ? (_openBlock(), _createElementBlock("div", _hoisted_21, [
-                    _createVNode(_component_v_row, { dense: "" }, {
-                      default: _withCtx(() => [
-                        _createVNode(_component_v_col, {
-                          cols: "12",
-                          md: "4"
-                        }, {
-                          default: _withCtx(() => [
-                            _createVNode(_component_v_switch, {
-                              modelValue: config.enable_restore,
-                              "onUpdate:modelValue": _cache[36] || (_cache[36] = $event => ((config.enable_restore) = $event)),
-                              label: "启用恢复功能",
-                              color: "primary",
-                              "prepend-icon": "mdi-restore",
-                              class: "tight-switch",
-                              onChange: _cache[37] || (_cache[37] = $event => (onFeatureSwitch('enable_restore', $event)))
-                            }, null, 8, ["modelValue"])
-                          ]),
-                          _: 1
-                        }),
-                        _createVNode(_component_v_col, {
-                          cols: "12",
-                          md: "4"
-                        }, {
-                          default: _withCtx(() => [
-                            _createVNode(_component_v_switch, {
-                              modelValue: config.restore_force,
-                              "onUpdate:modelValue": _cache[38] || (_cache[38] = $event => ((config.restore_force) = $event)),
-                              label: "强制恢复（覆盖现有VM）",
-                              color: "error",
-                              "prepend-icon": "mdi-alert-circle",
-                              class: "tight-switch",
-                              onChange: _cache[39] || (_cache[39] = $event => (onFeatureSwitch('restore_force', $event)))
-                            }, null, 8, ["modelValue"])
-                          ]),
-                          _: 1
-                        }),
-                        _createVNode(_component_v_col, {
-                          cols: "12",
-                          md: "4"
-                        }, {
-                          default: _withCtx(() => [
-                            _createVNode(_component_v_switch, {
-                              modelValue: config.restore_skip_existing,
-                              "onUpdate:modelValue": _cache[40] || (_cache[40] = $event => ((config.restore_skip_existing) = $event)),
-                              label: "跳过已存在的VM",
-                              color: "warning",
-                              "prepend-icon": "mdi-skip-next",
-                              class: "tight-switch",
-                              onChange: _cache[41] || (_cache[41] = $event => (onFeatureSwitch('restore_skip_existing', $event)))
-                            }, null, 8, ["modelValue"])
-                          ]),
-                          _: 1
-                        })
-                      ]),
-                      _: 1
-                    })
+              : (activeNode.value === 'declaration')
+                ? (_openBlock(), _createElementBlock("div", _hoisted_31, [
+                    _createElementVNode("div", _hoisted_32, [
+                      _createVNode(_component_v_icon, {
+                        class: "mr-2",
+                        color: "info"
+                      }, {
+                        default: _withCtx(() => _cache[72] || (_cache[72] = [
+                          _createTextVNode("mdi-information-outline")
+                        ])),
+                        _: 1
+                      }),
+                      _cache[73] || (_cache[73] = _createTextVNode(" 插件说明 "))
+                    ]),
+                    _createElementVNode("div", _hoisted_33, [
+                      _cache[76] || (_cache[76] = _createTextVNode(" 欢迎使用 ")),
+                      _cache[77] || (_cache[77] = _createElementVNode("b", null, "PVE虚拟机守护神 - 备份插件", -1)),
+                      _cache[78] || (_cache[78] = _createTextVNode("！本插件旨在为你的PVE环境提供便捷、安全的备份与恢复体验。")),
+                      _cache[79] || (_cache[79] = _createElementVNode("br", null, null, -1)),
+                      _cache[80] || (_cache[80] = _createElementVNode("br", null, null, -1)),
+                      _createVNode(_component_v_icon, {
+                        size: "18",
+                        color: "warning",
+                        class: "mr-1",
+                        style: {"vertical-align":"middle"}
+                      }, {
+                        default: _withCtx(() => _cache[74] || (_cache[74] = [
+                          _createTextVNode("mdi-alert-circle-outline")
+                        ])),
+                        _: 1
+                      }),
+                      _cache[81] || (_cache[81] = _createElementVNode("b", null, "重要须知", -1)),
+                      _cache[82] || (_cache[82] = _createElementVNode("br", null, null, -1)),
+                      _cache[83] || (_cache[83] = _createElementVNode("span", { style: {"color":"#1976d2"} }, [
+                        _createTextVNode(" · 数据仅本地存储，远程备份只上传到你指定的服务器，如有顾虑请勿使用本插件。"),
+                        _createElementVNode("br"),
+                        _createTextVNode(" · 插件作者不对因使用本插件造成的任何数据丢失、损坏或其他后果负责。"),
+                        _createElementVNode("br"),
+                        _createTextVNode(" · 使用本插件即表示您已知悉并同意以上说明。 ")
+                      ], -1)),
+                      _cache[84] || (_cache[84] = _createElementVNode("br", null, null, -1)),
+                      _cache[85] || (_cache[85] = _createElementVNode("br", null, null, -1)),
+                      _createVNode(_component_v_icon, {
+                        size: "18",
+                        color: "primary",
+                        class: "mr-1",
+                        style: {"vertical-align":"middle"}
+                      }, {
+                        default: _withCtx(() => _cache[75] || (_cache[75] = [
+                          _createTextVNode("mdi-lightbulb-on-outline")
+                        ])),
+                        _: 1
+                      }),
+                      _cache[86] || (_cache[86] = _createElementVNode("b", null, "使用方法", -1)),
+                      _cache[87] || (_cache[87] = _createElementVNode("br", null, null, -1)),
+                      _cache[88] || (_cache[88] = _createElementVNode("span", { style: {"color":"#1976d2"} }, [
+                        _createTextVNode(" 1. 插件的所有主要操作（如备份、恢复、清理）都在\"状态页\"进行。"),
+                        _createElementVNode("br"),
+                        _createTextVNode(" 2. 各项功能（如自动备份、WebDAV远程备份、恢复、系统设置）需在本页相应分区启用并保存后，"),
+                        _createElementVNode("br"),
+                        _createTextVNode(" 才能在状态页正常使用。"),
+                        _createElementVNode("br"),
+                        _createTextVNode(" 3. 修改配置后请务必点击\"保存\"，否则新设置不会生效。"),
+                        _createElementVNode("br"),
+                        _createTextVNode(" 4. 如遇按钮无法点击或功能不可用，请检查相关功能是否已在本页启用。"),
+                        _createElementVNode("br"),
+                        _createTextVNode(" 5. 欢迎提交Issue和Pull Request来帮助改进插件。 ")
+                      ], -1))
+                    ])
                   ]))
                 : _createCommentVNode("", true),
-      _createElementVNode("div", _hoisted_22, [
-        _createVNode(_component_v_btn, {
-          class: "glow-btn glow-btn-blue",
-          size: "small",
-          "prepend-icon": "mdi-view-dashboard",
-          onClick: _cache[42] || (_cache[42] = $event => (emit('switch')))
-        }, {
-          default: _withCtx(() => _cache[54] || (_cache[54] = [
-            _createTextVNode("状态页")
-          ])),
-          _: 1
-        }),
-        _createVNode(_component_v_btn, {
-          class: "glow-btn glow-btn-orange",
-          size: "small",
-          "prepend-icon": "mdi-restore",
-          onClick: resetConfig
-        }, {
-          default: _withCtx(() => _cache[55] || (_cache[55] = [
-            _createTextVNode("重置")
-          ])),
-          _: 1
-        }),
-        _createVNode(_component_v_btn, {
-          class: "glow-btn glow-btn-green",
-          size: "small",
-          "prepend-icon": "mdi-content-save",
-          loading: saving.value,
-          onClick: saveConfig
-        }, {
-          default: _withCtx(() => _cache[56] || (_cache[56] = [
-            _createTextVNode("保存")
-          ])),
-          _: 1
-        }, 8, ["loading"]),
-        _createVNode(_component_v_btn, {
-          class: "glow-btn glow-btn-pink",
-          size: "small",
-          "prepend-icon": "mdi-close",
-          onClick: _cache[43] || (_cache[43] = $event => (emit('close')))
-        }, {
-          default: _withCtx(() => _cache[57] || (_cache[57] = [
-            _createTextVNode("关闭")
-          ])),
-          _: 1
-        })
+      _createElementVNode("div", _hoisted_34, [
+        _createElementVNode("div", _hoisted_35, [
+          _createVNode(_component_v_btn, {
+            class: "glow-btn glow-btn-blue",
+            size: "small",
+            "prepend-icon": "mdi-view-dashboard",
+            onClick: _cache[49] || (_cache[49] = $event => (emit('switch')))
+          }, {
+            default: _withCtx(() => _cache[89] || (_cache[89] = [
+              _createTextVNode("状态页")
+            ])),
+            _: 1
+          })
+        ]),
+        _createElementVNode("div", _hoisted_36, [
+          _createVNode(_component_v_btn, {
+            class: "glow-btn glow-btn-orange",
+            size: "small",
+            "prepend-icon": "mdi-restore",
+            onClick: resetConfig
+          }, {
+            default: _withCtx(() => _cache[90] || (_cache[90] = [
+              _createTextVNode("重置")
+            ])),
+            _: 1
+          }),
+          _createVNode(_component_v_btn, {
+            class: "glow-btn glow-btn-green",
+            size: "small",
+            "prepend-icon": "mdi-content-save",
+            loading: saving.value,
+            onClick: saveConfig
+          }, {
+            default: _withCtx(() => _cache[91] || (_cache[91] = [
+              _createTextVNode("保存")
+            ])),
+            _: 1
+          }, 8, ["loading"]),
+          _createVNode(_component_v_btn, {
+            class: "glow-btn glow-btn-pink",
+            size: "small",
+            "prepend-icon": "mdi-close",
+            onClick: _cache[50] || (_cache[50] = $event => (emit('close')))
+          }, {
+            default: _withCtx(() => _cache[92] || (_cache[92] = [
+              _createTextVNode("关闭")
+            ])),
+            _: 1
+          })
+        ])
       ])
     ]),
-    _cache[58] || (_cache[58] = _createElementVNode("svg", {
+    _cache[93] || (_cache[93] = _createElementVNode("svg", {
       width: "0",
       height: "0"
     }, [
@@ -1518,6 +1850,6 @@ return (_ctx, _cache) => {
 }
 
 };
-const ConfigComponent = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-735df811"]]);
+const ConfigComponent = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-1d6cd9dc"]]);
 
 export { ConfigComponent as default };

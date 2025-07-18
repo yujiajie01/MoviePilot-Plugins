@@ -298,4 +298,294 @@ def get_container_status(host, port, username, password, key_file):
         ssh.close()
     except Exception as e:
         containers.append({'error': str(e)})
-    return containers 
+    return containers
+
+
+def clean_pve_tmp_files(host, port, username, password, key_file):
+    """
+    通过SSH执行 rm -rf /var/lib/vz/dump/*.tmp，彻底清理PVE主机上的所有 .tmp 文件和目录。
+    返回 (清理数量, 错误信息)
+    """
+    import paramiko
+    count = 0
+    error = None
+    try:
+        ssh = paramiko.SSHClient()
+        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        if key_file:
+            private_key = paramiko.RSAKey.from_private_key_file(key_file)
+            ssh.connect(host, port=port, username=username, pkey=private_key, timeout=10)
+        else:
+            ssh.connect(host, port=port, username=username, password=password, timeout=10)
+        # 先统计要清理的数量
+        stdin, stdout, stderr = ssh.exec_command("ls -1d /var/lib/vz/dump/*.tmp 2>/dev/null | wc -l")
+        count_str = stdout.read().decode().strip()
+        try:
+            count = int(count_str)
+        except Exception:
+            count = 0
+        # 执行清理命令
+        stdin, stdout, stderr = ssh.exec_command("rm -rf /var/lib/vz/dump/*.tmp")
+        err = stderr.read().decode().strip()
+        if err:
+            error = err
+        ssh.close()
+    except Exception as e:
+        error = str(e)
+    return count, error 
+
+
+def clean_pve_logs(host, port, username, password, key_file, journal_days=None, log_dirs=None):
+    """
+    通过SSH清理PVE主机上的系统日志。
+    - journal_days: int或None，journalctl保留天数（None则全部清理）
+    - log_dirs: dict，key为日志目录（如/var/log/vzdump），value为保留N个文件（None或0为全部清理）
+    返回: dict {类别: (清理数量, 错误信息)}
+    """
+    import paramiko
+    result = {}
+    try:
+        ssh = paramiko.SSHClient()
+        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        if key_file:
+            private_key = paramiko.RSAKey.from_private_key_file(key_file)
+            ssh.connect(host, port=port, username=username, pkey=private_key, timeout=10)
+        else:
+            ssh.connect(host, port=port, username=username, password=password, timeout=10)
+        # 1. 清理journalctl
+        if journal_days is not None:
+            try:
+                cmd = f"journalctl --vacuum-time={journal_days}d"
+                stdin, stdout, stderr = ssh.exec_command(cmd)
+                out, err = stdout.read().decode(), stderr.read().decode()
+                err = err.strip() if err else ''
+                # 优化：只要包含 Vacuuming done 或为空就不算失败
+                if not err or 'Vacuuming done' in err:
+                    result['journalctl'] = (None, None)
+                else:
+                    result['journalctl'] = (None, err)
+            except Exception as e:
+                result['journalctl'] = (None, str(e))
+        else:
+            # 全部清理（极端情况，不建议）
+            try:
+                cmd = "journalctl --rotate && journalctl --vacuum-time=1s"
+                stdin, stdout, stderr = ssh.exec_command(cmd)
+                out, err = stdout.read().decode(), stderr.read().decode()
+                err = err.strip() if err else ''
+                if not err or 'Vacuuming done' in err:
+                    result['journalctl'] = (None, None)
+                else:
+                    result['journalctl'] = (None, err)
+            except Exception as e:
+                result['journalctl'] = (None, str(e))
+        # 2. 清理各类日志目录
+        if log_dirs:
+            import shlex
+            for log_dir, keep_num in log_dirs.items():
+                try:
+                    # 获取所有日志文件，按修改时间倒序
+                    list_cmd = f"ls -1t {shlex.quote(log_dir)} 2>/dev/null"
+                    stdin, stdout, stderr = ssh.exec_command(list_cmd)
+                    files = [f.strip() for f in stdout.read().decode().splitlines() if f.strip()]
+                    del_count = 0
+                    err = None
+                    if files:
+                        if keep_num and keep_num > 0:
+                            to_delete = files[keep_num:]
+                        else:
+                            to_delete = files
+                        for f in to_delete:
+                            del_cmd = f"rm -f {shlex.quote(log_dir.rstrip('/') + '/' + f)}"
+                            stdin, stdout, stderr = ssh.exec_command(del_cmd)
+                            _ = stdout.read()
+                            e = stderr.read().decode().strip()
+                            # 优化：如果是 'Is a directory' 错误，忽略
+                            if e and 'Is a directory' not in e:
+                                err = e
+                            elif not e:
+                                del_count += 1
+                    result[log_dir] = (del_count, err)
+                except Exception as e:
+                    result[log_dir] = (0, str(e))
+        ssh.close()
+    except Exception as e:
+        result['ssh'] = (0, str(e))
+    return result 
+
+
+def list_template_images(host, port, username, password, key_file):
+    """
+    列出PVE主机上的所有ISO镜像和CT模板文件。
+    返回列表：[{'filename':..., 'type': 'iso'/'ct', 'size_mb':..., 'date':...}]
+    """
+    import paramiko
+    import os
+    import datetime
+    result = []
+    iso_exts = ('.iso', '.img', '.raw', '.qcow2', '.vmdk', '.vdi', '.vhd', '.vhdx')
+    ct_exts = ('.tar.gz', '.tar.xz', '.tar.lzo', '.tar.zst', '.tgz', '.txz', '.tlz', '.tbz', '.tar.bz2')
+    try:
+        ssh = paramiko.SSHClient()
+        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        if key_file:
+            private_key = paramiko.RSAKey.from_private_key_file(key_file)
+            ssh.connect(host, port=port, username=username, pkey=private_key, timeout=10)
+        else:
+            ssh.connect(host, port=port, username=username, password=password, timeout=10)
+        # ISO镜像
+        for dir_path, exts, ftype in [
+            ('/var/lib/vz/template/iso', iso_exts, 'iso'),
+            ('/var/lib/vz/template/cache', ct_exts, 'ct')
+        ]:
+            cmd = f"ls -l --time-style=+%Y-%m-%d\ %H:%M:%S {dir_path}"
+            stdin, stdout, stderr = ssh.exec_command(cmd)
+            lines = stdout.read().decode().splitlines()
+            for line in lines:
+                parts = line.strip().split()
+                if len(parts) < 6 or parts[0][0] != '-':
+                    continue
+                fname = parts[-1]
+                if not fname.lower().endswith(exts):
+                    continue
+                size = int(parts[4])
+                date = ' '.join(parts[5:7]) if len(parts) >= 7 else ''
+                result.append({
+                    'filename': fname,
+                    'type': ftype,
+                    'size_mb': round(size / (1024*1024), 2),
+                    'date': date
+                })
+        ssh.close()
+    except Exception as e:
+        return []
+    return result
+
+def upload_template_image(host, port, username, password, key_file, local_path, filename, filetype):
+    """
+    上传本地镜像/模板文件到PVE主机指定目录。
+    local_path: 本地文件路径
+    filename: 目标文件名
+    filetype: 'iso' or 'ct'
+    """
+    import paramiko
+    import os
+    try:
+        ssh = paramiko.SSHClient()
+        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        if key_file:
+            private_key = paramiko.RSAKey.from_private_key_file(key_file)
+            ssh.connect(host, port=port, username=username, pkey=private_key, timeout=10)
+        else:
+            ssh.connect(host, port=port, username=username, password=password, timeout=10)
+        sftp = ssh.open_sftp()
+        if filetype == 'iso':
+            remote_path = f"/var/lib/vz/template/iso/{filename}"
+        else:
+            remote_path = f"/var/lib/vz/template/cache/{filename}"
+        # 路径安全校验
+        if not os.path.basename(remote_path) == filename:
+            raise Exception("非法文件名")
+        sftp.put(local_path, remote_path)
+        sftp.close()
+        ssh.close()
+        return True, None
+    except Exception as e:
+        return False, str(e)
+
+def download_template_image(host, port, username, password, key_file, filename, filetype, local_path):
+    """
+    下载指定模板镜像（ISO或CT模板）到本地路径。
+    filetype: 'iso' or 'ct'
+    """
+    import paramiko
+    import os
+    try:
+        ssh = paramiko.SSHClient()
+        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        if key_file:
+            private_key = paramiko.RSAKey.from_private_key_file(key_file)
+            ssh.connect(host, port=port, username=username, pkey=private_key, timeout=10)
+        else:
+            ssh.connect(host, port=port, username=username, password=password, timeout=10)
+        sftp = ssh.open_sftp()
+        if filetype == 'iso':
+            remote_path = f"/var/lib/vz/template/iso/{filename}"
+        else:
+            remote_path = f"/var/lib/vz/template/cache/{filename}"
+        # 路径安全校验
+        if not os.path.basename(remote_path) == filename:
+            raise Exception("非法文件名")
+        sftp.get(remote_path, local_path)
+        sftp.close()
+        ssh.close()
+        return True, None
+    except Exception as e:
+        return False, str(e)
+
+def delete_template_image(host, port, username, password, key_file, filename, filetype):
+    """
+    删除指定模板镜像（ISO或CT模板）。
+    filetype: 'iso' or 'ct'
+    """
+    import paramiko
+    import os
+    try:
+        ssh = paramiko.SSHClient()
+        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        if key_file:
+            private_key = paramiko.RSAKey.from_private_key_file(key_file)
+            ssh.connect(host, port=port, username=username, pkey=private_key, timeout=10)
+        else:
+            ssh.connect(host, port=port, username=username, password=password, timeout=10)
+        sftp = ssh.open_sftp()
+        if filetype == 'iso':
+            remote_path = f"/var/lib/vz/template/iso/{filename}"
+        else:
+            remote_path = f"/var/lib/vz/template/cache/{filename}"
+        # 路径安全校验
+        if not os.path.basename(remote_path) == filename:
+            raise Exception("非法文件名")
+        sftp.remove(remote_path)
+        sftp.close()
+        ssh.close()
+        return True, None
+    except Exception as e:
+        return False, str(e) 
+
+def download_template_image_from_url(host, port, username, password, key_file, url, filename, filetype):
+    """
+    让PVE主机从指定URL下载镜像/模板到本地目录。
+    url: 下载链接
+    filename: 目标文件名
+    filetype: 'iso' or 'ct'
+    """
+    import paramiko
+    import os
+    try:
+        ssh = paramiko.SSHClient()
+        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        if key_file:
+            private_key = paramiko.RSAKey.from_private_key_file(key_file)
+            ssh.connect(host, port=port, username=username, pkey=private_key, timeout=10)
+        else:
+            ssh.connect(host, port=port, username=username, password=password, timeout=10)
+        if filetype == 'iso':
+            remote_path = f"/var/lib/vz/template/iso/{filename}"
+        else:
+            remote_path = f"/var/lib/vz/template/cache/{filename}"
+        # 路径安全校验
+        if not os.path.basename(remote_path) == filename:
+            raise Exception("非法文件名")
+        # 优先用wget
+        cmd = f"wget -O '{remote_path}' '{url}' || curl -L -o '{remote_path}' '{url}'"
+        stdin, stdout, stderr = ssh.exec_command(cmd)
+        exit_status = stdout.channel.recv_exit_status()
+        err = stderr.read().decode().strip()
+        ssh.close()
+        if exit_status == 0:
+            return True, None
+        else:
+            return False, err or f"下载失败，exit code {exit_status}"
+    except Exception as e:
+        return False, str(e) 
