@@ -115,5 +115,17 @@
       "v1.0.1": "修复定时任务不准问题，懒人配置站点默认全选",
       "v1.0.0": "首个正式版本：支持Cloudflare优选IP、自动写入hosts"
     }
+  },
+  "DoubanFolio": {
+    "name": "豆瓣观影同步档案(自用版)",
+    "description": "自动同步您的豆瓣观影记录，生成可视化观影档案，支持本地与云端备份，助您轻松管理个人电影足迹。",
+    "labels": "豆瓣",
+    "version": "1.0",
+    "icon": "douban.png",
+    "author": "M.Jinxi",
+    "level": 2,
+    "history": {
+      "v1.0": "首个自用版本"
+    }
   }
 }
