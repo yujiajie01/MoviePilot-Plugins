@@ -107,12 +107,13 @@
     "name": "PT云盾优选",
     "description": "PT站点专属优选IP，自动写入hosts，访问快人一步",
     "labels": "站点,优选",
-    "version": "1.0.1",
+    "version": "1.1.0",
     "icon": "https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/cfipselector.png",
     "author": "M.Jinxi",
     "level": 2,
     "requirements": ["requests>=2.25.0", "apscheduler>=3.6.0", "python-hosts>=1.0.4"],
     "history": {
+      "v1.1.0": "全面重构核心代码，全量快速随机IP采样，每个站点级独立优选",
       "v1.0.1": "修复定时任务不准问题，懒人配置站点默认全选",
       "v1.0.0": "首个正式版本：支持Cloudflare优选IP、自动写入hosts"
     }

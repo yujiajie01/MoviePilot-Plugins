@@ -24,7 +24,7 @@ class CFIPSelector(_PluginBase):
     plugin_name = "PT云盾优选"
     plugin_desc = "PT站点专属优选IP，自动写入hosts，访问快人一步"
     plugin_icon = "https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/cfipselector.png"
-    plugin_version = "1.0.1"
+    plugin_version = "1.1.0"
     plugin_author = "M.Jinxi"
     author_url = "https://github.com/xijin285"
     plugin_config_prefix = "cfipselector_"
@@ -48,9 +48,12 @@ class CFIPSelector(_PluginBase):
     siteoper: Optional[object] = None
     _last_select_time = ''
     _last_selected_ip = ''
+    _concurrency: int = 20  # 并发线程数
+    _cidr_sample_num: int = 100  # CIDR抽样数
+    _candidate_num: int = 20  # 第二阶段候选数量
 
     def init_plugin(self, config: dict = None):
-        logger.info("CFIPSelector插件已加载")
+        #logger.info("PT云盾优选 插件已加载")
         self.stop_service()  # 每次都先彻底停止服务
         self.sites = None
         self.siteoper = None
@@ -75,6 +78,9 @@ class CFIPSelector(_PluginBase):
             self._port = int(config.get("port", 443))
             self._tls = bool(config.get("tls", True))
             self._ipnum = int(config.get("ipnum", 10))
+            self._concurrency = int(config.get("concurrency", 20))
+            self._cidr_sample_num = int(config.get("cidr_sample_num", 100))
+            self._candidate_num = int(config.get("candidate_num", 20))
             raw_sign_sites = config.get("sign_sites") or []
             self._sign_sites = [str(i) for i in raw_sign_sites]
             self._last_select_time = config.get("last_select_time", "")
@@ -128,6 +134,9 @@ class CFIPSelector(_PluginBase):
             "port": self._port,
             "tls": self._tls,
             "ipnum": self._ipnum,
+            "concurrency": self._concurrency,
+            "cidr_sample_num": self._cidr_sample_num,
+            "candidate_num": self._candidate_num,
             "sign_sites": self._sign_sites or [],
             "last_select_time": getattr(self, '_last_select_time', ''),
             "last_selected_ip": getattr(self, '_last_selected_ip', ''),
@@ -197,8 +206,9 @@ class CFIPSelector(_PluginBase):
 
     def _get_ip_pool_by_datacenters(self, ip_type: int, datacenters: List[str], max_per_net: int = 10) -> list:
         """
-        只生成目标数据中心的IP池
+        只生成目标数据中心的IP池，优化为所有网段均匀采样
         """
+        import random
         loc_path = os.path.join(os.path.dirname(__file__), 'resources', 'locations.json')
         if os.path.exists(loc_path):
             with open(loc_path, 'r', encoding='utf-8') as f:
@@ -215,13 +225,16 @@ class CFIPSelector(_PluginBase):
         for net in nets:
             try:
                 net_obj = ipaddress.ip_network(net, strict=False)
-                for idx, ip in enumerate(net_obj.hosts()):
-                    if idx >= max_per_net:
-                        break
-                    ip_pool.append(str(ip))
+                hosts = list(net_obj.hosts())
+                if len(hosts) > max_per_net:
+                    sampled_hosts = random.sample(hosts, max_per_net)
+                else:
+                    sampled_hosts = hosts
+                ip_pool.extend([str(ip) for ip in sampled_hosts])
             except Exception as e:
                 logger.warning(f"解析网段{net}失败: {e}")
-        logger.info(f"生成IPv{ip_type} IP池（仅目标数据中心），共{len(ip_pool)}个IP")
+        random.shuffle(ip_pool)
+        logger.info(f"生成IPv{ip_type} IP池（均匀采样），共{len(ip_pool)}个IP")
         return ip_pool
 
     def _download_locations_json(self):
@@ -264,6 +277,25 @@ class CFIPSelector(_PluginBase):
             return delay
         except Exception:
             return 9999
+
+    def _is_cf_node(self, ip: str, port: int = 443, tls: bool = True, timeout: int = 2) -> bool:
+        """
+        检查该IP是否为Cloudflare反代节点（通过访问 /cdn-cgi/trace 判断）
+        """
+        try:
+            protocol = "https" if tls else "http"
+            url = f"{protocol}://{ip}:{port}/cdn-cgi/trace"
+            resp = requests.get(url, timeout=timeout, verify=False)
+            # 关键字判断
+            if "cloudflare" in resp.text.lower() or "cf-ray" in resp.text.lower():
+                logger.info(f"IP {ip} 是Cloudflare反代节点")
+                return True
+            else:
+                logger.info(f"IP {ip} 不是Cloudflare反代节点")
+        except Exception as e:
+            # logger.info(f"IP {ip} 检测Cloudflare节点异常: {e}")
+            pass
+        return False
 
     def _get_selected_sites_info(self) -> List[Dict[str, Any]]:
         """
@@ -482,12 +514,12 @@ class CFIPSelector(_PluginBase):
         except Exception as e:
             logger.error(f"恢复hosts失败: {e}")
 
-    def _write_hosts_for_sites(self, ip: str, domains: List[str]):
+    def _write_hosts_for_sites_multi(self, ip_map: Dict[str, str]) -> bool:
         """
-        将选中站点的域名写入hosts，指向优选IP
+        将多个域名和IP写入hosts，指向优选IP
         """
-        if not domains:
-            logger.warning("没有检测站点，跳过hosts写入")
+        if not ip_map:
+            logger.warning("没有优选IP，跳过hosts写入")
             return False
         
         try:
@@ -502,6 +534,7 @@ class CFIPSelector(_PluginBase):
             # 读取系统hosts
             system_hosts = Hosts(path=hosts_path)
             
+            # 移除所有旧的hosts条目，除了注释
             original_entries = []
             for entry in system_hosts.entries:
                 if entry.entry_type == "comment" and entry.comment == "# CFIPSelector优选IP":
@@ -513,7 +546,7 @@ class CFIPSelector(_PluginBase):
             new_entries = []
             new_entries.append(HostsEntry(entry_type='comment', comment="# CFIPSelector优选IP"))
             
-            for domain in domains:
+            for domain, ip in ip_map.items():
                 try:
                     host_entry = HostsEntry(
                         entry_type='ipv6' if ':' in ip else 'ipv4',
@@ -528,7 +561,7 @@ class CFIPSelector(_PluginBase):
             system_hosts.add(new_entries)
             system_hosts.write()
             
-            logger.info(f"成功写入hosts: {ip} -> {domains}")
+            logger.info(f"成功写入hosts: {ip_map}")
             return True
             
         except Exception as e:
@@ -540,9 +573,7 @@ class CFIPSelector(_PluginBase):
         try:
             logger.info("开始优选IP...")
             test_sites_info = self._get_selected_sites_info()
-            test_domains = [info["domain"] for info in test_sites_info]
-            use_site_testing = len(test_domains) > 0
-            if not use_site_testing:
+            if not test_sites_info:
                 logger.warning("未选择检测站点，无法进行优选。")
                 return
             ip_types = []
@@ -555,24 +586,86 @@ class CFIPSelector(_PluginBase):
                 logger.warning("IPv4/IPv6均未启用，不进行优选。")
                 return
             locations = self._download_locations_json()
-            for ip_type in ip_types:
-                ip_pool = self._get_ip_pool_by_datacenters(ip_type, [d.strip().upper() for d in self._datacenters.split(",") if d.strip()], max_per_net=10)
-                for ip in ip_pool:
-                    site_test_result = self._test_ip_with_sites(ip, test_domains, timeout=5)
-                    if site_test_result["success_count"] > 0:
-                        logger.info(f"优选成功，已写入hosts: {ip}")
-                        hosts_status = self._write_hosts_for_sites(ip, test_domains)
-                        if hosts_status:
-                            from datetime import datetime
-                            self._last_select_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                            self._last_selected_ip = ip
-                            self.__update_config()
-                        else:
-                            logger.warning(f"优选成功但写入hosts失败: {ip}")
-                        if self._notify:
-                            test_method = "HTTPS" if self._tls else "HTTP"
-                            self._send_notification(True, f"优选完成，已找到可用IP: {ip}", [{"ip": ip, "test_method": test_method}], hosts_status=hosts_status)
-                        return
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+            import random
+            # 每个域名单独优选
+            domain_best_ip = {}
+            for site_info in test_sites_info:
+                domain = site_info["domain"]
+                logger.info(f"\n===== 开始为站点 {domain} 独立优选IP =====")
+                best_ip = None
+                best_result = None
+                for ip_type in ip_types:
+                    ip_pool = self._get_ip_pool_by_datacenters(ip_type, [d.strip().upper() for d in self._datacenters.split(",") if d.strip()], max_per_net=10)
+                    if len(ip_pool) > self._cidr_sample_num:
+                        ip_pool = random.sample(ip_pool, self._cidr_sample_num)
+                    else:
+                        random.shuffle(ip_pool)
+                    logger.info(f"第一阶段：并发ping筛选低延迟IP（候选{len(ip_pool)}个）")
+                    ping_results = {}
+                    with ThreadPoolExecutor(max_workers=self._concurrency) as executor:
+                        future_to_ip = {executor.submit(self._tcp_ping, ip, self._port, 1): ip for ip in ip_pool}
+                        for future in as_completed(future_to_ip):
+                            ip = future_to_ip[future]
+                            try:
+                                delay = future.result()
+                            except Exception:
+                                delay = 9999
+                            ping_results[ip] = delay
+                    sorted_ips = sorted(ping_results.items(), key=lambda x: x[1])
+                    candidate_ips = [ip for ip, delay in sorted_ips if delay < self._delay][:self._candidate_num]
+                    if not candidate_ips:
+                        logger.warning(f"ping筛选后无可用IP！[{domain}]")
+                        continue
+                    logger.info(f"第二阶段：并发判断Cloudflare节点（候选{len(candidate_ips)}个）")
+                    cf_ips = []
+                    with ThreadPoolExecutor(max_workers=self._concurrency) as executor:
+                        future_to_ip = {executor.submit(self._is_cf_node, ip, self._port, self._tls): ip for ip in candidate_ips}
+                        for future in as_completed(future_to_ip):
+                            ip = future_to_ip[future]
+                            try:
+                                is_cf = future.result()
+                            except Exception:
+                                is_cf = False
+                            if is_cf:
+                                cf_ips.append(ip)
+                    if not cf_ips:
+                        logger.warning(f"Cloudflare节点筛选后无可用IP！[{domain}]")
+                        continue
+                    logger.info(f"第三阶段：并发完整测速（候选{len(cf_ips)}个）")
+                    logger.info(f"开始对{len(cf_ips)}个IP做完整测速，请稍候，预计需要{max(3, len(cf_ips)*2)}秒... [{domain}]")
+                    with ThreadPoolExecutor(max_workers=max(2, self._concurrency // 4)) as executor:
+                        future_to_ip = {executor.submit(self._test_ip_with_sites, ip, [domain], 5): ip for ip in cf_ips}
+                        total = len(cf_ips)
+                        for idx, future in enumerate(as_completed(future_to_ip), 1):
+                            ip = future_to_ip[future]
+                            try:
+                                result = future.result()
+                            except Exception:
+                                result = {"success_count": 0, "avg_delay": 9999}
+                            logger.info(f"完整测速进度：{idx}/{total} [{domain}]")
+                            if result["success_count"] > 0:
+                                if best_result is None or result["avg_delay"] < best_result["avg_delay"]:
+                                    best_ip = ip
+                                    best_result = result
+                if best_ip and best_result:
+                    logger.info(f"优选成功，站点 {domain} -> {best_ip}")
+                    domain_best_ip[domain] = best_ip
+                else:
+                    logger.warning(f"站点 {domain} 未找到可用IP！")
+            if domain_best_ip:
+                hosts_status = self._write_hosts_for_sites_multi(domain_best_ip)
+                if hosts_status:
+                    from datetime import datetime
+                    self._last_select_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    self._last_selected_ip = ", ".join([f"{d}:{ip}" for d, ip in domain_best_ip.items()])
+                    self.__update_config()
+                else:
+                    logger.warning(f"优选成功但写入hosts失败: {domain_best_ip}")
+                if self._notify:
+                    text = "\n".join([f"🌐 {d}: {ip}" for d, ip in domain_best_ip.items()])
+                    self._send_notification(True, f"多站点优选完成，已找到可用IP:", [{"ip": text, "test_method": "HTTPS" if self._tls else "HTTP"}], hosts_status=hosts_status)
+                return
             logger.warning("没有找到任何可用的优选IP！")
             if self._notify:
                 self._send_notification(False, "优选失败，没有找到可用IP。", None, hosts_status=None)
@@ -736,13 +829,13 @@ class CFIPSelector(_PluginBase):
                         'component': 'VRow',
                         'content': [
                             {'component': 'VCol', 'props': {'cols': 12, 'md': 3}, 'content': [
-                                {'component': 'VSwitch', 'props': {'model': 'enabled', 'label': '启用插件', 'color': 'primary', 'prepend-icon': 'mdi-power'}}]},
+                                {'component': 'VSwitch', 'props': {'model': 'enabled', 'label': '启用插件', 'color': 'primary', 'prepend-icon': 'mdi-power', 'hint': '总开关，启用后自动定时优选', 'persistent-hint': True}}]},
                             {'component': 'VCol', 'props': {'cols': 12, 'md': 3}, 'content': [
-                                {'component': 'VSwitch', 'props': {'model': 'notify', 'label': '发送通知', 'color': 'info', 'prepend-icon': 'mdi-bell'}}]},
+                                {'component': 'VSwitch', 'props': {'model': 'notify', 'label': '发送通知', 'color': 'info', 'prepend-icon': 'mdi-bell', 'hint': '优选结果推送到消息中心', 'persistent-hint': True}}]},
                             {'component': 'VCol', 'props': {'cols': 12, 'md': 3}, 'content': [
-                                {'component': 'VSwitch', 'props': {'model': 'tls', 'label': '加密连接', 'color': 'primary', 'prepend-icon': 'mdi-lock'}}]},
+                                {'component': 'VSwitch', 'props': {'model': 'tls', 'label': '加密连接', 'color': 'primary', 'prepend-icon': 'mdi-lock', 'hint': '是否使用HTTPS方式测速', 'persistent-hint': True}}]},
                             {'component': 'VCol', 'props': {'cols': 12, 'md': 3}, 'content': [
-                                {'component': 'VSwitch', 'props': {'model': 'onlyonce', 'label': '立即运行', 'color': 'success', 'prepend-icon': 'mdi-play'}}]},
+                                {'component': 'VSwitch', 'props': {'model': 'onlyonce', 'label': '立即运行', 'color': 'success', 'prepend-icon': 'mdi-play', 'hint': '保存后立即执行一次优选', 'persistent-hint': True}}]},
                         ]
                     },
                     {
@@ -757,7 +850,9 @@ class CFIPSelector(_PluginBase):
                                     'label': '检测站点',
                                     'items': site_options,
                                     'item-title': 'title',
-                                    'item-value': 'value'
+                                    'item-value': 'value',
+                                    'hint': '选择需要测速和加速的站点，可多选',
+                                    'persistent-hint': True
                                 }}
                             ]}
                         ]
@@ -766,27 +861,43 @@ class CFIPSelector(_PluginBase):
                         'component': 'VRow',
                         'content': [
                             {'component': 'VCol', 'props': {'cols': 6, 'md': 6}, 'content': [
-                                {'component': 'VTextField', 'props': {'model': 'port', 'label': '端口', 'placeholder': '443', 'prepend-inner-icon': 'mdi-lan'}}]},
+                                {'component': 'VTextField', 'props': {'model': 'concurrency', 'label': '并发线程数', 'placeholder': '20', 'prepend-inner-icon': 'mdi-rocket', 'hint': '每轮检测的最大并发数，建议20-100', 'persistent-hint': True}}]},
+                            {'component': 'VCol', 'props': {'cols': 6, 'md': 6}, 'content': [
+                                {'component': 'VTextField', 'props': {'model': 'cidr_sample_num', 'label': 'CIDR抽样数', 'placeholder': '100', 'prepend-inner-icon': 'mdi-shuffle-variant', 'hint': '每轮从IP池随机抽取多少个IP参与优选', 'persistent-hint': True}}]},
+                        ]
+                    },
+                    {
+                        'component': 'VRow',
+                        'content': [
+                            {'component': 'VCol', 'props': {'cols': 6, 'md': 6}, 'content': [
+                                {'component': 'VTextField', 'props': {'model': 'candidate_num', 'label': '候选数量', 'placeholder': '20', 'prepend-inner-icon': 'mdi-account-multiple', 'hint': '第二阶段参与Cloudflare节点判断的IP数量', 'persistent-hint': True}}]},
+                            {'component': 'VCol', 'props': {'cols': 6, 'md': 6}, 'content': [
+                                {'component': 'VTextField', 'props': {'model': 'ipnum', 'label': '优选数量', 'placeholder': '10', 'prepend-inner-icon': 'mdi-counter', 'hint': '最终选出多少个最优IP', 'persistent-hint': True}}]},
+                        ]
+                    },
+                    {
+                        'component': 'VRow',
+                        'content': [
+                            {'component': 'VCol', 'props': {'cols': 6, 'md': 6}, 'content': [
+                                {'component': 'VTextField', 'props': {'model': 'port', 'label': '端口', 'placeholder': '443', 'prepend-inner-icon': 'mdi-lan', 'hint': '测速时使用的端口，通常为443', 'persistent-hint': True}}]},
                             {'component': 'VCol', 'props': {'cols': 12, 'md': 6}, 'content': [
-                                {'component': 'VTextField', 'props': {'model': 'ip_type', 'label': 'IP类型(4/6/46)', 'placeholder': '4', 'prepend-inner-icon': 'mdi-numeric'}}]},
+                                {'component': 'VTextField', 'props': {'model': 'ip_type', 'label': 'IP类型(4/6/46)', 'placeholder': '4', 'prepend-inner-icon': 'mdi-numeric', 'hint': '4=IPv4, 6=IPv6, 46=双栈', 'persistent-hint': True}}]},
                         ]
                     },
                     {
                         'component': 'VRow',
                         'content': [
                             {'component': 'VCol', 'props': {'cols': 6, 'md': 6}, 'content': [
-                                {'component': 'VTextField', 'props': {'model': 'datacenters', 'label': '数据中心(逗号分隔)', 'placeholder': 'HKG,SJC', 'prepend-inner-icon': 'mdi-database-search'}}]},
+                                {'component': 'VTextField', 'props': {'model': 'datacenters', 'label': '数据中心(逗号分隔)', 'placeholder': 'HKG,SJC', 'prepend-inner-icon': 'mdi-database-search', 'hint': '只检测指定数据中心的IP，多个用逗号分隔', 'persistent-hint': True}}]},
                             {'component': 'VCol', 'props': {'cols': 6, 'md': 6}, 'content': [
-                                {'component': 'VTextField', 'props': {'model': 'ipnum', 'label': '优选数量', 'placeholder': '10', 'prepend-inner-icon': 'mdi-counter'}}]},
+                                {'component': 'VTextField', 'props': {'model': 'cron', 'label': '定时任务(cron)', 'placeholder': '0 3 * * *', 'prepend-inner-icon': 'mdi-clock-outline', 'hint': '定时自动优选的cron表达式', 'persistent-hint': True}}]},
                         ]
                     },
                     {
                         'component': 'VRow',
                         'content': [
                             {'component': 'VCol', 'props': {'cols': 6, 'md': 6}, 'content': [
-                                {'component': 'VTextField', 'props': {'model': 'cron', 'label': '定时任务(cron)', 'placeholder': '0 3 * * *', 'prepend-inner-icon': 'mdi-clock-outline'}}]},
-                            {'component': 'VCol', 'props': {'cols': 6, 'md': 6}, 'content': [
-                                {'component': 'VTextField', 'props': {'model': 'delay', 'label': '延迟阈值(ms)', 'placeholder': '1500', 'prepend-inner-icon': 'mdi-timer'}}]},
+                                {'component': 'VTextField', 'props': {'model': 'delay', 'label': '延迟阈值(ms)', 'placeholder': '1500', 'prepend-inner-icon': 'mdi-timer', 'hint': '超过该延迟的IP会被淘汰', 'persistent-hint': True}}]},
                         ]
                     },
                 ]
@@ -803,6 +914,9 @@ class CFIPSelector(_PluginBase):
             "port": self._port,
             "tls": self._tls,
             "ipnum": self._ipnum,
+            "concurrency": self._concurrency,
+            "cidr_sample_num": self._cidr_sample_num,
+            "candidate_num": self._candidate_num,
             "sign_sites": self._sign_sites or [],
             "last_select_time": self._last_select_time,
             "last_selected_ip": self._last_selected_ip,

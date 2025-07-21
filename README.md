@@ -173,7 +173,7 @@ MoviePilot第三方插件库，提供了一系列实用的插件来增强MoviePi
 </details>
 
 #### <img src="https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/proxmox.webp" width="32" style="vertical-align:middle;"> PVE虚拟机守护神 (ProxmoxVEBackup)
--   **版本**: `v2.1.0`
+-   **版本**: `v2.1.1`
 -   **作者**: [@M.Jinxi](https://github.com/xijin285)
 
 **简介**：
@@ -239,27 +239,33 @@ MoviePilot第三方插件库，提供了一系列实用的插件来增强MoviePi
 > 🎉 首个正式版本：支持夸克网盘基础操作、存储集成等功能。
 
 #### <img src="https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/cfipselector.png" width="32" style="vertical-align:middle;"> PT云盾优选 (CFIPSelector)
-- **版本**: `v1.0.1`
+- **版本**: `v1.1.0`
 - **作者**: [@M.Jinxi](https://github.com/xijin285)
 
 **简介**：
-> Cloudflare智能IP优选，自动写入hosts，助力PT站点极速访问。
+> Cloudflare智能IP优选，自动写入hosts，助力PT站点极速访问。  
+> **全新架构，支持全量随机IP采样与站点级独立优选，测速数据可视化更强大！**
 
 **主要功能**：
 - 🛡️ **Cloudflare IP优选**：智能筛选最优Cloudflare节点，提升站点访问速度
 - 🖥️ **自动写入hosts**：一键将优选IP写入系统hosts，无需手动配置
-- 🌐 **多站点测速**：支持自定义多个PT站点，自动批量测速
+- 🌐 **多站点独立优选**：每个站点独立优选最优IP，实现真正的“站点级加速”
+- 🎲 **全量随机IP采样**：IP池采样方式升级，优选结果更分散多样
+- 📊 **测速数据可视化**：状态页展示每个站点的优选IP、平均延迟、可用性、优选时长等详细数据
 - ⏰ **定时任务/一键运行**：支持定时自动优选，也可手动立即执行
-- 🔔 **多渠道通知**：优选结果自动推送至微信、Telegram等多平台
-- 📊 **状态可视化**：界面展示当前优选IP、检测站点、历史记录等信息
 - ⚙️ **灵活配置**：支持自定义数据中心、IP类型、延迟阈值等参数
 
 **最新更新**：
-> `v1.0.1`  
-> 🛠️ 修复定时任务不准问题，懒人配置站点默认全选。
+> `v1.1.0`  
+> 🚀 **重大重构 · 全新架构**  
+> - 底层代码全面重写，结构更清晰，性能更优  
+> - IP池采样方式升级为“全网段均匀随机”，优选结果更分散多样  
+> - 支持每个站点独立优选最优IP，实现真正的“站点级最优加速”  
+> - 状态页新增每个站点的优选IP、平均延迟、可用性、优选时长等详细数据  
 
 <details>
 <summary>历史更新</summary>
+- `v1.0.1`：🛠️ 修复定时任务不准问题，懒人配置站点默认全选。
 - `v1.0.0`：🛡️ 首发，支持Cloudflare IP优选、自动写入hosts、多站点测速、定时任务与多渠道通知推送。
 </details>
 
