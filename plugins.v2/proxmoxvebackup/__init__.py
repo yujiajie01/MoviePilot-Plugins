@@ -28,7 +28,7 @@ class ProxmoxVEBackup(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/proxmox.webp"
     # 插件版本
-    plugin_version = "2.1.0"
+    plugin_version = "2.1.1"
     # 插件作者
     plugin_author = "M.Jinxi"
     # 作者主页
@@ -77,7 +77,7 @@ class ProxmoxVEBackup(_PluginBase):
     _backup_mode: str = "snapshot"  # 备份模式，默认snapshot
     _compress_mode: str = "zstd"    # 压缩模式，默认zstd
     _auto_delete_after_download: bool = True  # 下载后自动删除PVE备份
-    _download_all_backups: bool = False  # 下载所有备份文件（多VM备份时）
+    _download_all_backups: bool = True  # 下载所有备份文件（多VM备份时）
 
     # WebDAV配置
     _enable_webdav: bool = False
@@ -136,7 +136,7 @@ class ProxmoxVEBackup(_PluginBase):
             self._compress_mode = str(saved_config.get("compress_mode", "zstd"))
             self._backup_vmid = str(saved_config.get("backup_vmid", ""))
             self._auto_delete_after_download = bool(saved_config.get("auto_delete_after_download", False))
-            self._download_all_backups = bool(saved_config.get("download_all_backups", False))
+            self._download_all_backups = bool(saved_config.get("download_all_backups", True))
             configured_backup_path = str(saved_config.get("backup_path", "")).strip()
             if not configured_backup_path:
                 self._backup_path = str(self.get_data_path() / "actual_backups")
@@ -364,7 +364,7 @@ class ProxmoxVEBackup(_PluginBase):
             "restore_skip_existing": self._restore_skip_existing,
             "restore_file": self._restore_file,
             "restore_now": self._restore_now,
-            "auto_cleanup_tmp": getattr(self, "auto_cleanup_tmp", True),
+            "auto_cleanup_tmp": (self.get_config() or {}).get("auto_cleanup_tmp", True),
             
             # 新增系统日志清理配置
             "enable_log_cleanup": getattr(self, "_enable_log_cleanup", False),
@@ -521,6 +521,13 @@ class ProxmoxVEBackup(_PluginBase):
                 "methods": ["POST"],
                 "auth": "bear",
                 "summary": "清理PVE系统日志"
+            },
+            {
+                "path": "/cleanup_tmp",
+                "endpoint": self._cleanup_tmp_api,
+                "methods": ["POST"],
+                "auth": "bear",
+                "summary": "清理PVE临时空间"
             },
             {
                 "path": "/template_images",
@@ -2429,6 +2436,7 @@ class ProxmoxVEBackup(_PluginBase):
             "next_run_time": next_run_time,
             "enable_log_cleanup": getattr(self, "_enable_log_cleanup", False),
             "cleanup_template_images": self._cleanup_template_images,
+            "auto_cleanup_tmp": (self.get_config() or {}).get("auto_cleanup_tmp", True),
         }
 
     def _save_config(self, data: dict = None):
@@ -2868,15 +2876,16 @@ class ProxmoxVEBackup(_PluginBase):
         except Exception as e:
             return {"success": False, "msg": str(e)}
 
-    def _cleanup_tmp_api(self, *args, **kwargs):
-        import glob, os
-        count = 0
-        for f in glob.glob('/var/lib/vz/dump/*.tmp'):
-            try:
-                os.remove(f)
-                count += 1
-            except Exception:
-                pass
+    def _cleanup_tmp_api(self, data: dict = None):
+        count, error = clean_pve_tmp_files(
+            self._pve_host,
+            self._ssh_port,
+            self._ssh_username,
+            self._ssh_password,
+            self._ssh_key_file
+        )
+        if error:
+            return {"success": False, "msg": f"清理失败: {error}"}
         return {"success": True, "msg": f"已清理 {count} 个临时文件"}
 
     def _cleanup_logs_api(self, data: dict = None):
