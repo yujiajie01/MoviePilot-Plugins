@@ -7,6 +7,7 @@ import os
 from datetime import datetime
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 from app.plugins import _PluginBase
 from app.log import logger
 from app.core.config import settings
@@ -20,11 +21,19 @@ import zipfile, tarfile
 import json
 from collections import defaultdict
 
+# 尝试导入psutil，如果不可用则使用备选方案
+try:
+    import psutil
+    PSUTIL_AVAILABLE = True
+except ImportError:
+    PSUTIL_AVAILABLE = False
+    logger.warning("psutil未安装，将无法监控内存使用情况")
+
 class CFIPSelector(_PluginBase):
     plugin_name = "PT云盾优选"
     plugin_desc = "PT站点专属优选IP，自动写入hosts，访问快人一步"
     plugin_icon = "https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/cfipselector.png"
-    plugin_version = "1.1.0"
+    plugin_version = "1.1.1"
     plugin_author = "M.Jinxi"
     author_url = "https://github.com/xijin285"
     plugin_config_prefix = "cfipselector_"
@@ -52,6 +61,13 @@ class CFIPSelector(_PluginBase):
     _cidr_sample_num: int = 100  # CIDR抽样数
     _candidate_num: int = 20  # 第二阶段候选数量
 
+    # 新增tracker优选相关私有属性
+    _enable_site_select: bool = True  # PT站点优选开关
+    _enable_tracker_select: bool = False  # tracker优选开关
+    _tracker_include_list: List[str] = []  # UI tracker域名列表
+    _github_tracker_url: str = None  # GitHub tracker列表URL
+    _auto_sync_scheduler: Optional[BackgroundScheduler] = None
+
     def init_plugin(self, config: dict = None):
         #logger.info("PT云盾优选 插件已加载")
         self.stop_service()  # 每次都先彻底停止服务
@@ -60,6 +76,7 @@ class CFIPSelector(_PluginBase):
         self._sign_sites = []
         self._last_select_time = ''
         self._last_selected_ip = ''
+        self._tracker_include_list = []  # 新增：UI tracker域名列表
         try:
             from app.helper.sites import SitesHelper
             from app.db.site_oper import SiteOper
@@ -99,6 +116,27 @@ class CFIPSelector(_PluginBase):
             except Exception:
                 pass
             self._sign_sites = [i for i in self._sign_sites if i in all_ids]
+            # 新增：tracker优选域名UI配置
+            tracker_include_list = config.get("tracker_include_list")
+            if tracker_include_list is not None:
+                if isinstance(tracker_include_list, str):
+                    tracker_include_list = [i.strip() for i in tracker_include_list.splitlines() if i.strip()]
+                self._tracker_include_list = tracker_include_list
+                # 保存到trackers_include.txt
+                try:
+                    include_path = '/config/plugins/CFIPSelector/trackers_include.txt'
+                    from pathlib import Path
+                    Path('/config/plugins/CFIPSelector').mkdir(parents=True, exist_ok=True)
+                    with open(include_path, 'w', encoding='utf-8') as f:
+                        for line in self._tracker_include_list:
+                            f.write(line + '\n')
+                except Exception as e:
+                    logger.warning(f"写入trackers_include.txt失败: {e}")
+            else:
+                self._tracker_include_list = []
+            self._enable_site_select = bool(config.get("enable_site_select", True))
+            self._enable_tracker_select = bool(config.get("enable_tracker_select", True))
+            self._github_tracker_url = config.get("github_tracker_url")  # 新增：GitHub tracker列表URL
             self.__update_config()
         if self._enabled:
             if self._onlyonce:
@@ -121,6 +159,12 @@ class CFIPSelector(_PluginBase):
                 self.__add_task()
         else:
             logger.info("插件未启用")
+            self._clear_hosts_cfipselector()
+        # 新增：每小时自动同步内置tracker列表（仅在UI输入为空时）
+        self.__add_auto_sync_trackers_task()
+        # 新增：插件初始化时自动同步GitHub tracker列表（仅在无自定义时）
+        if not self._tracker_include_list:
+            self.sync_trackers_from_github()
 
     def __update_config(self):
         self.update_config({
@@ -140,6 +184,10 @@ class CFIPSelector(_PluginBase):
             "sign_sites": self._sign_sites or [],
             "last_select_time": getattr(self, '_last_select_time', ''),
             "last_selected_ip": getattr(self, '_last_selected_ip', ''),
+            "enable_site_select": self._enable_site_select,
+            "enable_tracker_select": self._enable_tracker_select,
+            "tracker_include_list": "\n".join(self._tracker_include_list) if self._tracker_include_list else "",
+            "github_tracker_url": self._github_tracker_url,
         })
 
     def __add_task(self):
@@ -153,6 +201,24 @@ class CFIPSelector(_PluginBase):
             logger.info(f"{self.plugin_name} 定时任务已启动: {self._cron}")
         except Exception as e:
             logger.error(f"{self.plugin_name} cron表达式格式错误: {self._cron}, 错误: {e}")
+
+    def __add_auto_sync_trackers_task(self):
+        """
+        启动一个定时任务，每天自动同步内置tracker列表（仅在插件启用且UI输入为空时）
+        """
+        if hasattr(self, '_auto_sync_scheduler') and self._auto_sync_scheduler and self._auto_sync_scheduler.running:
+            return
+        from apscheduler.schedulers.background import BackgroundScheduler
+        from apscheduler.triggers.interval import IntervalTrigger
+        self._auto_sync_scheduler = BackgroundScheduler(timezone=settings.TZ)
+        trigger = IntervalTrigger(days=1)  # 改为每天同步一次
+        self._auto_sync_scheduler.add_job(self._auto_sync_trackers, trigger=trigger, name='自动同步GitHub tracker列表')
+        self._auto_sync_scheduler.start()
+
+    def _auto_sync_trackers(self):
+        # 只有插件启用且UI输入为空才自动同步
+        if self._enabled and not self._tracker_include_list:
+            self.sync_trackers_from_github()
 
     def _parse_cron(self, cron_str):
         parts = cron_str.split()
@@ -194,11 +260,30 @@ class CFIPSelector(_PluginBase):
         for net in nets:
             try:
                 net_obj = ipaddress.ip_network(net, strict=False)
+                
+                # 检查内存使用情况（仅对IPv6）
+                if ip_type == 6 and PSUTIL_AVAILABLE:
+                    try:
+                        memory_percent = psutil.virtual_memory().percent
+                        if memory_percent > 80:
+                            logger.warning(f"内存使用率过高（{memory_percent:.1f}%），跳过IPv6网段 {net}")
+                            continue
+                    except Exception:
+                        pass  # 如果无法获取内存信息，继续执行
+                
                 # 只取每个网段前max_per_net个IP，避免爆炸
-                for idx, ip in enumerate(net_obj.hosts()):
-                    if idx >= max_per_net:
-                        break
-                    ip_pool.append(str(ip))
+                # 对于IPv6，设置更小的采样限制
+                if ip_type == 6:
+                    max_per_net_v6 = min(max_per_net, 5)  # IPv6最多采样5个
+                    for idx, ip in enumerate(net_obj.hosts()):
+                        if idx >= max_per_net_v6:
+                            break
+                        ip_pool.append(str(ip))
+                else:
+                    for idx, ip in enumerate(net_obj.hosts()):
+                        if idx >= max_per_net:
+                            break
+                        ip_pool.append(str(ip))
             except Exception as e:
                 logger.warning(f"解析网段{net}失败: {e}")
         logger.info(f"生成IPv{ip_type} IP池，共{len(ip_pool)}个IP")
@@ -225,12 +310,36 @@ class CFIPSelector(_PluginBase):
         for net in nets:
             try:
                 net_obj = ipaddress.ip_network(net, strict=False)
-                hosts = list(net_obj.hosts())
-                if len(hosts) > max_per_net:
-                    sampled_hosts = random.sample(hosts, max_per_net)
+                
+                # 检查内存使用情况（仅对IPv6）
+                if ip_type == 6 and PSUTIL_AVAILABLE:
+                    try:
+                        memory_percent = psutil.virtual_memory().percent
+                        if memory_percent > 80:
+                            logger.warning(f"内存使用率过高（{memory_percent:.1f}%），跳过IPv6网段 {net}")
+                            continue
+                    except Exception:
+                        pass  # 如果无法获取内存信息，继续执行
+                
+                # 修复IPv6内存爆炸问题：不使用list()，直接使用迭代器
+                # 对于IPv6，设置更小的采样限制
+                if ip_type == 6:
+                    # IPv6网段可能非常大，限制采样数量
+                    max_per_net_v6 = min(max_per_net, 5)  # IPv6最多采样5个
+                    sampled_ips = []
+                    for idx, ip in enumerate(net_obj.hosts()):
+                        if idx >= max_per_net_v6:
+                            break
+                        sampled_ips.append(str(ip))
+                    ip_pool.extend(sampled_ips)
                 else:
-                    sampled_hosts = hosts
-                ip_pool.extend([str(ip) for ip in sampled_hosts])
+                    # IPv4使用原来的逻辑
+                    sampled_ips = []
+                    for idx, ip in enumerate(net_obj.hosts()):
+                        if idx >= max_per_net:
+                            break
+                        sampled_ips.append(str(ip))
+                    ip_pool.extend(sampled_ips)
             except Exception as e:
                 logger.warning(f"解析网段{net}失败: {e}")
         random.shuffle(ip_pool)
@@ -374,71 +483,82 @@ class CFIPSelector(_PluginBase):
         logger.info(f"选中的检测站点域名: {domains}")
         return domains
 
-    def _test_ip_with_sites(self, ip: str, domains: List[str], timeout: int = 5) -> Dict[str, Any]:
+    def _test_ip_with_sites(self, ip: str, domains: List[str], timeout: int = 5, loose_mode: bool = False, repeat: int = 1) -> Dict[str, Any]:
         """
         用临时hosts测试IP对站点的访问速度
+        repeat>1时多次测速，全部成功才算可用
         返回: {"total_delay": 总延迟, "success_count": 成功数, "total_count": 总数, "avg_delay": 平均延迟}
+        loose_mode=True时，只要能连上就算成功（tracker专用）
         """
         if not domains:
             return {"total_delay": 9999, "success_count": 0, "total_count": 0, "avg_delay": 9999}
-        
         total_delay = 0
         success_count = 0
         total_count = len(domains)
-        
-        # 临时修改hosts进行测试
         original_hosts = self._read_system_hosts()
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
         try:
-            # 添加临时hosts条目
             temp_hosts = []
             for domain in domains:
                 temp_hosts.append(f"{ip} {domain}")
-            
             self._add_temp_hosts(temp_hosts)
-            
-            # 测试每个站点
             for domain in domains:
-                try:
-                    start_time = time.time()
-                    if self._tls:
-                        url = f"https://{domain}"
-                    else:
-                        url = f"http://{domain}"
-                    
-                    # 添加重试机制
-                    max_retries = 2
-                    for retry in range(max_retries):
-                        try:
-                            response = requests.get(url, timeout=timeout, verify=False)
-                            if response.status_code == 200:
-                                delay = (time.time() - start_time) * 1000
-                                total_delay += delay
-                                success_count += 1
-                                logger.debug(f"IP {ip} 访问 {domain} 成功，延迟: {delay:.2f}ms")
+                all_success = True
+                domain_total_delay = 0
+                for _ in range(repeat):
+                    try:
+                        start_time = time.time()
+                        if self._tls:
+                            url = f"https://{domain}"
+                        else:
+                            url = f"http://{domain}"
+                        max_retries = 2
+                        for retry in range(max_retries):
+                            try:
+                                response = requests.get(url, timeout=timeout, verify=False, headers=headers)
+                                if loose_mode:
+                                    # 只要能连上就算成功
+                                    delay = (time.time() - start_time) * 1000
+                                    domain_total_delay += delay
+                                    logger.debug(f"IP {ip} 访问 {domain} 成功（loose_mode），延迟: {delay:.2f}ms，状态码: {response.status_code}")
+                                    break
+                                else:
+                                    if response.status_code == 200:
+                                        delay = (time.time() - start_time) * 1000
+                                        domain_total_delay += delay
+                                        logger.debug(f"IP {ip} 访问 {domain} 成功，延迟: {delay:.2f}ms")
+                                        break
+                                    else:
+                                        logger.debug(f"IP {ip} 访问 {domain} 失败，状态码: {response.status_code}")
+                                        if retry == max_retries - 1:
+                                            logger.debug(f"IP {ip} 访问 {domain} 重试{max_retries}次后仍失败")
+                                            all_success = False
+                            except requests.exceptions.ConnectionError as e:
+                                if "Connection reset by peer" in str(e):
+                                    logger.debug(f"IP {ip} 访问 {domain} 连接被重置 (重试 {retry+1}/{max_retries})")
+                                    if retry < max_retries - 1:
+                                        time.sleep(0.5)
+                                        continue
+                                else:
+                                    logger.debug(f"IP {ip} 访问 {domain} 连接异常: {e}")
+                                    all_success = False
+                            except Exception as e:
+                                logger.debug(f"IP {ip} 访问 {domain} 异常: {e}")
+                                all_success = False
                                 break
-                            else:
-                                logger.debug(f"IP {ip} 访问 {domain} 失败，状态码: {response.status_code}")
-                                if retry == max_retries - 1:
-                                    logger.debug(f"IP {ip} 访问 {domain} 重试{max_retries}次后仍失败")
-                        except requests.exceptions.ConnectionError as e:
-                            if "Connection reset by peer" in str(e):
-                                logger.debug(f"IP {ip} 访问 {domain} 连接被重置 (重试 {retry+1}/{max_retries})")
-                                if retry < max_retries - 1:
-                                    time.sleep(0.5)  # 短暂等待后重试
-                                    continue
-                            else:
-                                logger.debug(f"IP {ip} 访问 {domain} 连接异常: {e}")
-                        except Exception as e:
-                            logger.debug(f"IP {ip} 访问 {domain} 异常: {e}")
+                        else:
+                            all_success = False
+                        if not all_success:
                             break
-                            
-                except Exception as e:
-                    logger.debug(f"IP {ip} 访问 {domain} 异常: {e}")
-            
+                    except Exception as e:
+                        logger.debug(f"IP {ip} 访问 {domain} 异常: {e}")
+                        all_success = False
+                        break
+                if all_success:
+                    total_delay += domain_total_delay / repeat
+                    success_count += 1
         finally:
-            # 恢复原始hosts
             self._restore_hosts(original_hosts)
-        
         avg_delay = total_delay / success_count if success_count > 0 else 9999
         return {
             "total_delay": total_delay,
@@ -568,40 +688,51 @@ class CFIPSelector(_PluginBase):
             logger.error(f"写入hosts失败: {e}")
             return False
 
-    @eventmanager.register(EventType.PluginAction)
-    def select_ips(self, event: Event = None):
-        try:
-            logger.info("开始优选IP...")
-            test_sites_info = self._get_selected_sites_info()
-            if not test_sites_info:
-                logger.warning("未选择检测站点，无法进行优选。")
-                return
-            ip_types = []
-            ip_type_str = str(getattr(self, '_ip_type', '4'))
-            if '4' in ip_type_str:
-                ip_types.append(4)
-            if '6' in ip_type_str:
-                ip_types.append(6)
-            if not ip_types:
-                logger.warning("IPv4/IPv6均未启用，不进行优选。")
-                return
-            locations = self._download_locations_json()
-            from concurrent.futures import ThreadPoolExecutor, as_completed
-            import random
-            # 每个域名单独优选
-            domain_best_ip = {}
-            for site_info in test_sites_info:
-                domain = site_info["domain"]
-                logger.info(f"\n===== 开始为站点 {domain} 独立优选IP =====")
-                best_ip = None
-                best_result = None
+    def _select_tracker_ips_from_list(self):
+        """
+        通过配置文件或内置tracker列表获取tracker域名，进行优选。
+        返回{tracker域名: 优选IP}
+        """
+        logger.info("[CFIPSelector] 开始通过配置文件/内置列表优选tracker...")
+        tracker_domains = self._get_tracker_domains_for_selection()
+        if not tracker_domains:
+            logger.warning("未检测到任何tracker域名，跳过优选。")
+            return {}
+        logger.info(f"[CFIPSelector] 最终参与优选的tracker: {list(tracker_domains)}")
+        ip_types = []
+        ip_type_str = str(getattr(self, '_ip_type', '4'))
+        if '4' in ip_type_str:
+            ip_types.append(4)
+        if '6' in ip_type_str:
+            ip_types.append(6)
+        if not ip_types:
+            logger.warning("IPv4/IPv6均未启用，不进行优选。")
+            return {}
+        locations = self._download_locations_json()
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        import random
+        domain_best_ip = {}
+        max_rounds = 10  # 最多尝试10轮，防止死循环
+        for domain in tracker_domains:
+            logger.info(f"\n===== 开始为Tracker {domain} 独立优选IP =====")
+            best_ip = None
+            best_result = None
+            tried_ips = set()
+            round_idx = 0
+            while not (best_ip and best_result) and round_idx < max_rounds:
+                round_idx += 1
                 for ip_type in ip_types:
-                    ip_pool = self._get_ip_pool_by_datacenters(ip_type, [d.strip().upper() for d in self._datacenters.split(",") if d.strip()], max_per_net=10)
+                    all_ip_pool = self._get_ip_pool_by_datacenters(ip_type, [d.strip().upper() for d in self._datacenters.split(",") if d.strip()], max_per_net=10)
+                    ip_pool = [ip for ip in all_ip_pool if ip not in tried_ips]
+                    if not ip_pool:
+                        logger.warning(f"所有IP都已尝试，无法继续采样！[{domain}]")
+                        break
                     if len(ip_pool) > self._cidr_sample_num:
                         ip_pool = random.sample(ip_pool, self._cidr_sample_num)
                     else:
                         random.shuffle(ip_pool)
-                    logger.info(f"第一阶段：并发ping筛选低延迟IP（候选{len(ip_pool)}个）")
+                    tried_ips.update(ip_pool)
+                    logger.info(f"第{round_idx}轮：并发ping筛选低延迟IP（候选{len(ip_pool)}个）")
                     ping_results = {}
                     with ThreadPoolExecutor(max_workers=self._concurrency) as executor:
                         future_to_ip = {executor.submit(self._tcp_ping, ip, self._port, 1): ip for ip in ip_pool}
@@ -615,9 +746,9 @@ class CFIPSelector(_PluginBase):
                     sorted_ips = sorted(ping_results.items(), key=lambda x: x[1])
                     candidate_ips = [ip for ip, delay in sorted_ips if delay < self._delay][:self._candidate_num]
                     if not candidate_ips:
-                        logger.warning(f"ping筛选后无可用IP！[{domain}]")
+                        logger.warning(f"第{round_idx}轮ping筛选后无可用IP！[{domain}]")
                         continue
-                    logger.info(f"第二阶段：并发判断Cloudflare节点（候选{len(candidate_ips)}个）")
+                    logger.info(f"第{round_idx}轮：并发判断Cloudflare节点（候选{len(candidate_ips)}个）")
                     cf_ips = []
                     with ThreadPoolExecutor(max_workers=self._concurrency) as executor:
                         future_to_ip = {executor.submit(self._is_cf_node, ip, self._port, self._tls): ip for ip in candidate_ips}
@@ -630,12 +761,12 @@ class CFIPSelector(_PluginBase):
                             if is_cf:
                                 cf_ips.append(ip)
                     if not cf_ips:
-                        logger.warning(f"Cloudflare节点筛选后无可用IP！[{domain}]")
+                        logger.warning(f"第{round_idx}轮Cloudflare节点筛选后无可用IP！[{domain}]")
                         continue
-                    logger.info(f"第三阶段：并发完整测速（候选{len(cf_ips)}个）")
+                    logger.info(f"第{round_idx}轮：并发完整测速（候选{len(cf_ips)}个）")
                     logger.info(f"开始对{len(cf_ips)}个IP做完整测速，请稍候，预计需要{max(3, len(cf_ips)*2)}秒... [{domain}]")
                     with ThreadPoolExecutor(max_workers=max(2, self._concurrency // 4)) as executor:
-                        future_to_ip = {executor.submit(self._test_ip_with_sites, ip, [domain], 5): ip for ip in cf_ips}
+                        future_to_ip = {executor.submit(self._test_ip_with_sites, ip, [domain], 5, True, 3): ip for ip in cf_ips}
                         total = len(cf_ips)
                         for idx, future in enumerate(as_completed(future_to_ip), 1):
                             ip = future_to_ip[future]
@@ -648,23 +779,144 @@ class CFIPSelector(_PluginBase):
                                 if best_result is None or result["avg_delay"] < best_result["avg_delay"]:
                                     best_ip = ip
                                     best_result = result
-                if best_ip and best_result:
-                    logger.info(f"优选成功，站点 {domain} -> {best_ip}")
-                    domain_best_ip[domain] = best_ip
+            if best_ip and best_result:
+                logger.info(f"优选成功，Tracker {domain} -> {best_ip}")
+                domain_best_ip[domain] = best_ip
+            else:
+                logger.warning(f"Tracker {domain} 未找到可用IP！")
+        return domain_best_ip
+
+    @eventmanager.register(EventType.PluginAction)
+    def select_ips(self, event: Event = None):
+        try:
+            logger.info("开始优选IP...")
+            
+            # 检查IPv6配置，如果启用IPv6则给出警告
+            ip_type_str = str(getattr(self, '_ip_type', '4'))
+            if '6' in ip_type_str:
+                logger.warning("检测到IPv6配置，已启用内存保护机制。如果遇到内存问题，建议仅使用IPv4配置。")
+            
+            test_sites_info = self._get_selected_sites_info()
+            domain_best_ip = {}
+            max_rounds = 10  # 最多尝试10轮，防止死循环
+            # 1. 优选PT站点域名
+            if self._enable_site_select:
+                if test_sites_info:
+                    ip_types = []
+                    ip_type_str = str(getattr(self, '_ip_type', '4'))
+                    if '4' in ip_type_str:
+                        ip_types.append(4)
+                    if '6' in ip_type_str:
+                        ip_types.append(6)
+                    if not ip_types:
+                        logger.warning("IPv4/IPv6均未启用，不进行优选。")
+                        return
+                    locations = self._download_locations_json()
+                    from concurrent.futures import ThreadPoolExecutor, as_completed
+                    import random
+                    for site_info in test_sites_info:
+                        domain = site_info["domain"]
+                        logger.info(f"\n===== 开始为站点 {domain} 独立优选IP =====")
+                        best_ip = None
+                        best_result = None
+                        tried_ips = set()
+                        round_idx = 0
+                        while not (best_ip and best_result) and round_idx < max_rounds:
+                            round_idx += 1
+                            for ip_type in ip_types:
+                                all_ip_pool = self._get_ip_pool_by_datacenters(ip_type, [d.strip().upper() for d in self._datacenters.split(",") if d.strip()], max_per_net=10)
+                                ip_pool = [ip for ip in all_ip_pool if ip not in tried_ips]
+                                if not ip_pool:
+                                    logger.warning(f"所有IP都已尝试，无法继续采样！[{domain}]")
+                                    break
+                                if len(ip_pool) > self._cidr_sample_num:
+                                    ip_pool = random.sample(ip_pool, self._cidr_sample_num)
+                                else:
+                                    random.shuffle(ip_pool)
+                                tried_ips.update(ip_pool)
+                                logger.info(f"第{round_idx}轮：并发ping筛选低延迟IP（候选{len(ip_pool)}个）")
+                                ping_results = {}
+                                with ThreadPoolExecutor(max_workers=self._concurrency) as executor:
+                                    future_to_ip = {executor.submit(self._tcp_ping, ip, self._port, 1): ip for ip in ip_pool}
+                                    for future in as_completed(future_to_ip):
+                                        ip = future_to_ip[future]
+                                        try:
+                                            delay = future.result()
+                                        except Exception:
+                                            delay = 9999
+                                        ping_results[ip] = delay
+                                sorted_ips = sorted(ping_results.items(), key=lambda x: x[1])
+                                candidate_ips = [ip for ip, delay in sorted_ips if delay < self._delay][:self._candidate_num]
+                                if not candidate_ips:
+                                    logger.warning(f"第{round_idx}轮ping筛选后无可用IP！[{domain}]")
+                                    continue
+                                logger.info(f"第{round_idx}轮：并发判断Cloudflare节点（候选{len(candidate_ips)}个）")
+                                cf_ips = []
+                                with ThreadPoolExecutor(max_workers=self._concurrency) as executor:
+                                    future_to_ip = {executor.submit(self._is_cf_node, ip, self._port, self._tls): ip for ip in candidate_ips}
+                                    for future in as_completed(future_to_ip):
+                                        ip = future_to_ip[future]
+                                        try:
+                                            is_cf = future.result()
+                                        except Exception:
+                                            is_cf = False
+                                        if is_cf:
+                                            cf_ips.append(ip)
+                                if not cf_ips:
+                                    logger.warning(f"第{round_idx}轮Cloudflare节点筛选后无可用IP！[{domain}]")
+                                    # 对于IPv6，如果Cloudflare节点检测失败，尝试跳过此步骤
+                                    if ip_type == 6:
+                                        logger.info(f"IPv6模式：跳过Cloudflare节点检测，直接使用ping筛选的候选IP进行测速")
+                                        cf_ips = candidate_ips
+                                    else:
+                                        continue
+                                logger.info(f"第{round_idx}轮：并发完整测速（候选{len(cf_ips)}个）")
+                                logger.info(f"开始对{len(cf_ips)}个IP做完整测速，请稍候，预计需要{max(3, len(cf_ips)*2)}秒... [{domain}]")
+                                with ThreadPoolExecutor(max_workers=max(2, self._concurrency // 4)) as executor:
+                                    future_to_ip = {executor.submit(self._test_ip_with_sites, ip, [domain], 5, False, 3): ip for ip in cf_ips}
+                                    total = len(cf_ips)
+                                    for idx, future in enumerate(as_completed(future_to_ip), 1):
+                                        ip = future_to_ip[future]
+                                        try:
+                                            result = future.result()
+                                        except Exception:
+                                            result = {"success_count": 0, "avg_delay": 9999}
+                                        logger.info(f"完整测速进度：{idx}/{total} [{domain}]")
+                                        if result["success_count"] > 0:
+                                            if best_result is None or result["avg_delay"] < best_result["avg_delay"]:
+                                                best_ip = ip
+                                                best_result = result
+                            # 只要找到可用IP就break
+                        if best_ip and best_result:
+                            logger.info(f"优选成功，站点 {domain} -> {best_ip}")
+                            domain_best_ip[domain] = best_ip
+                        else:
+                            logger.warning(f"站点 {domain} 未找到可用IP！")
                 else:
-                    logger.warning(f"站点 {domain} 未找到可用IP！")
-            if domain_best_ip:
-                hosts_status = self._write_hosts_for_sites_multi(domain_best_ip)
+                    logger.warning("未选择检测站点，跳过PT站点优选。")
+
+            # 2. 优选tracker域名（通过配置/内置列表，不依赖下载器）
+            tracker_best_ip = {}
+            if self._enable_tracker_select:
+                try:
+                    tracker_best_ip = self._select_tracker_ips_from_list()
+                except Exception as e:
+                    logger.error(f"tracker优选流程异常: {e}")
+
+            # 3. 合并PT站点和tracker优选结果，统一写入hosts
+            merged_ip_map = {**domain_best_ip, **tracker_best_ip}
+            if merged_ip_map:
+                hosts_status = self._write_hosts_for_sites_multi(merged_ip_map)
                 if hosts_status:
                     from datetime import datetime
                     self._last_select_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                    self._last_selected_ip = ", ".join([f"{d}:{ip}" for d, ip in domain_best_ip.items()])
+                    self._last_selected_ip = ", ".join([f"{d}:{ip}" for d, ip in merged_ip_map.items()])
                     self.__update_config()
                 else:
-                    logger.warning(f"优选成功但写入hosts失败: {domain_best_ip}")
+                    logger.warning(f"优选成功但写入hosts失败: {merged_ip_map}")
                 if self._notify:
-                    text = "\n".join([f"🌐 {d}: {ip}" for d, ip in domain_best_ip.items()])
-                    self._send_notification(True, f"多站点优选完成，已找到可用IP:", [{"ip": text, "test_method": "HTTPS" if self._tls else "HTTP"}], hosts_status=hosts_status)
+                    text = "\n".join([f"🌐 {d}: {ip}" for d, ip in merged_ip_map.items()])
+                    self._send_notification(True, f"多站点+tracker优选完成，已找到可用IP:", [{"ip": text, "test_method": "HTTPS" if self._tls else "HTTP"}], hosts_status=hosts_status)
                 return
             logger.warning("没有找到任何可用的优选IP！")
             if self._notify:
@@ -805,6 +1057,53 @@ class CFIPSelector(_PluginBase):
             logger.error(f"同步异常: {e}")
             return {"success": False, "msg": f"同步异常：{e}"}
 
+    def sync_trackers_from_github(self, url: str = None):
+        """
+        从GitHub拉取tracker列表并写入trackers_include.txt，支持代理
+        """
+        if not url:
+            url = getattr(self, '_github_tracker_url', None) or "https://raw.githubusercontent.com/MJinxi/Rule/main/rules/trackers.list"
+        try:
+            resp = requests.get(url, timeout=10, proxies=getattr(settings, 'PROXY', None))
+            if resp.status_code == 200:
+                lines = [line.strip() for line in resp.text.splitlines() if line.strip()]
+                from pathlib import Path
+                Path('/config/plugins/CFIPSelector').mkdir(parents=True, exist_ok=True)
+                include_path = '/config/plugins/CFIPSelector/trackers_include.txt'
+                with open(include_path, 'w', encoding='utf-8') as f:
+                    for line in lines:
+                        f.write(line + '\n')
+                logger.info(f"同步GitHub tracker列表成功，共{len(lines)}个")
+                return True, f"同步成功，共{len(lines)}个tracker"
+            else:
+                logger.error(f"拉取GitHub tracker列表失败，状态码: {resp.status_code}")
+                return False, f"拉取失败，状态码: {resp.status_code}"
+        except Exception as e:
+            logger.error(f"同步GitHub tracker列表异常: {e}")
+            return False, f"同步异常: {e}"
+
+    def _get_tracker_domains_for_selection(self) -> set:
+        """
+        只读取trackers_include.txt（由GitHub同步和UI输入共同维护），支持DOMAIN-SUFFIX,xxx等格式自动提取域名
+        """
+        include_path = '/config/plugins/CFIPSelector/trackers_include.txt'
+        tracker_domains = set()
+        import os
+        if os.path.exists(include_path):
+            with open(include_path, 'r', encoding='utf-8-sig') as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith('#'):
+                        continue
+                    if ',' in line:
+                        parts = line.split(',', 1)
+                        domain = parts[1].strip()
+                        if domain:
+                            tracker_domains.add(domain.lower())
+                    else:
+                        tracker_domains.add(line.lower())
+        return tracker_domains
+
     def get_form(self) -> Tuple[List[dict], Dict[str, Any]]:
         site_options = []
         try:
@@ -821,6 +1120,15 @@ class CFIPSelector(_PluginBase):
                             [{"title": site.get("name"), "value": str(site.get("id"))} for site in custom_sites])
         except Exception as e:
             logger.warning(f"获取站点选项失败: {e}")
+        # 新增：读取trackers_include.txt内容作为默认值（始终优先显示文件内容）
+        tracker_include_default = ''
+        try:
+            include_path = '/config/plugins/CFIPSelector/trackers_include.txt'
+            if os.path.exists(include_path):
+                with open(include_path, 'r', encoding='utf-8-sig') as f:
+                    tracker_include_default = f.read().strip()
+        except Exception:
+            pass
         form = [
             {
                 'component': 'VForm',
@@ -836,6 +1144,27 @@ class CFIPSelector(_PluginBase):
                                 {'component': 'VSwitch', 'props': {'model': 'tls', 'label': '加密连接', 'color': 'primary', 'prepend-icon': 'mdi-lock', 'hint': '是否使用HTTPS方式测速', 'persistent-hint': True}}]},
                             {'component': 'VCol', 'props': {'cols': 12, 'md': 3}, 'content': [
                                 {'component': 'VSwitch', 'props': {'model': 'onlyonce', 'label': '立即运行', 'color': 'success', 'prepend-icon': 'mdi-play', 'hint': '保存后立即执行一次优选', 'persistent-hint': True}}]},
+                        ]
+                    },
+                    # 新增PT站点优选和tracker优选开关、立即同步按钮
+                    {
+                        'component': 'VRow',
+                        'content': [
+                            {'component': 'VCol', 'props': {'cols': 12, 'md': 3}, 'content': [
+                                {'component': 'VSwitch', 'props': {'model': 'enable_site_select', 'label': 'PT站点优选', 'color': 'primary', 'prepend-icon': 'mdi-web', 'hint': '是否对PT站点域名进行优选', 'persistent-hint': True}}]},
+                            {'component': 'VCol', 'props': {'cols': 12, 'md': 3, 'class': 'd-flex align-center'}, 'content': [
+                                {'component': 'VSwitch', 'props': {'model': 'enable_tracker_select', 'label': 'Tracker优选', 'color': 'primary', 'prepend-icon': 'mdi-lan-connect', 'hint': '是否对tracker域名进行优选', 'persistent-hint': True}}
+                            ]},
+                            {'component': 'VCol', 'props': {'cols': 12, 'md': 3, 'class': 'd-flex align-center'}, 'content': [
+                                {'component': 'VSwitch', 'props': {
+                                    'model': 'sync_github_trackers_now',
+                                    'label': '立即同步域名',
+                                    'color': 'primary',
+                                    'prepend-icon': 'mdi-flash',
+                                    'hint': '立即同步trackers域名列表',
+                                    'persistent-hint': True
+                                }}
+                            ]},
                         ]
                     },
                     {
@@ -898,6 +1227,47 @@ class CFIPSelector(_PluginBase):
                         'content': [
                             {'component': 'VCol', 'props': {'cols': 6, 'md': 6}, 'content': [
                                 {'component': 'VTextField', 'props': {'model': 'delay', 'label': '延迟阈值(ms)', 'placeholder': '1500', 'prepend-inner-icon': 'mdi-timer', 'hint': '超过该延迟的IP会被淘汰', 'persistent-hint': True}}]},
+                            {'component': 'VCol', 'props': {'cols': 6, 'md': 6}, 'content': [
+                                {'component': 'VTextField', 'props': {
+                                    'model': 'github_tracker_url',
+                                    'label': 'tracker域名地址（GitHub原始txt链接）',
+                                    'hint': '可填写GitHub/raw地址，优选时会从此地址同步tracker列表',
+                                    'persistent-hint': True,
+                                    'placeholder': '如：https://raw.githubusercontent.com/xxx/trackers.txt'
+                                }}
+                            ]}
+                        ]
+                    },
+                    # 新增tracker优选域名输入框
+                    {
+                        'component': 'VRow',
+                        'content': [
+                            {'component': 'VCol', 'props': {'cols': 12}, 'content': [
+                                {'component': 'VTextarea', 'props': {
+                                    'model': 'tracker_include_list',
+                                    'label': 'Tracker优选域名（每行一个）',
+                                    'rows': 4,
+                                    'hint': '填写需要优选的tracker域名，一行一个。留空则使用内置默认列表',
+                                    'persistent-hint': True,
+                                    'placeholder': '如：\ntracker.example.com\nannounce.example.org'
+                                }},
+                                # 配置说明参考
+                                {'component': 'VRow',
+                                    'content': [
+                                        {'component': 'VCol', 'props': {'cols': 12}, 'content': [
+                                            {'component': 'VAlert', 'props': {
+                                                'type': 'info',
+                                                'color': 'info',
+                                                'outlined': True,
+                                                'dense': True,
+                                                'class': 'mt-2 mb-2'
+                                            }, 'content': [
+                                                {'component': 'span', 'text': '配置说明参考: '},
+                                                {'component': 'a', 'props': {'href': 'https://github.com/xijin285/MoviePilot-Plugins/tree/main/plugins.v2/cfipselector/README.md', 'target': '_blank', 'style': 'color:#2196f3;text-decoration:underline;'}, 'text': 'README'}
+                                            ]}
+                                        ]}
+                                    ]}
+                            ]}
                         ]
                     },
                 ]
@@ -920,8 +1290,67 @@ class CFIPSelector(_PluginBase):
             "sign_sites": self._sign_sites or [],
             "last_select_time": self._last_select_time,
             "last_selected_ip": self._last_selected_ip,
+            "enable_site_select": self._enable_site_select,
+            "enable_tracker_select": self._enable_tracker_select,
+            "tracker_include_list": tracker_include_default,
+            "github_tracker_url": self._github_tracker_url or "",
         }
         return form, model
+
+    def _check_network_connectivity(self) -> bool:
+        """
+        检测网络连接状态
+        """
+        try:
+            import socket
+            # 测试连接到Google DNS
+            socket.create_connection(("8.8.8.8", 53), timeout=3)
+            return True
+        except Exception:
+            try:
+                # 备用测试：连接到Cloudflare DNS
+                socket.create_connection(("1.1.1.1", 53), timeout=3)
+                return True
+            except Exception:
+                return False
+
+    def _check_selection_status(self) -> bool:
+        """
+        检测优选状态：检查是否有有效的优选结果
+        """
+        # 检查是否有优选时间和IP
+        has_selection_time = bool(getattr(self, '_last_select_time', '') and 
+                                getattr(self, '_last_select_time', '') != '暂无记录')
+        has_selected_ip = bool(getattr(self, '_last_selected_ip', '') and 
+                              getattr(self, '_last_selected_ip', '') != '暂无')
+        
+        # 检查hosts文件中是否有优选IP条目
+        has_hosts_entries = False
+        try:
+            import platform
+            if platform.system() == "Windows":
+                hosts_path = r"c:\windows\system32\drivers\etc\hosts"
+            else:
+                hosts_path = '/etc/hosts'
+            
+            with open(hosts_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+                if "# CFIPSelector优选IP" in content:
+                    # 检查是否有实际的IP条目（不是只有注释）
+                    lines = content.split('\n')
+                    for line in lines:
+                        if line.strip() and not line.startswith('#') and not line.startswith('#'):
+                            # 检查是否是IP地址格式
+                            parts = line.strip().split()
+                            if len(parts) >= 2:
+                                ip_part = parts[0]
+                                if '.' in ip_part or ':' in ip_part:  # IPv4或IPv6
+                                    has_hosts_entries = True
+                                    break
+        except Exception:
+            pass
+        
+        return has_selection_time and has_selected_ip and has_hosts_entries
 
     def get_page(self) -> List[dict]:
         import random
@@ -938,6 +1367,53 @@ class CFIPSelector(_PluginBase):
                         site_names.append(getattr(site, 'name', str(site.id)))
             except Exception:
                 pass
+        
+        # 检测状态
+        network_connected = self._check_network_connectivity()
+        selection_success = self._check_selection_status()
+        
+        # 根据状态决定颜色
+        color_choices = ['info', 'success', 'primary', 'warning', 'error', 'secondary']
+        
+        # 检测站点芯片颜色
+        chips = []
+        def get_fixed_color(name):
+            color_choices = ['info', 'success', 'primary', 'warning', 'error', 'secondary']
+            if not name:
+                return 'primary'
+            idx = abs(hash(name)) % len(color_choices)
+            return color_choices[idx]
+        for name in site_names:
+            if network_connected and selection_success:
+                # 网络连接正常且优选成功，使用固定颜色
+                chip_color = get_fixed_color(name)
+            else:
+                # 网络连接异常或优选失败，使用灰色
+                chip_color = 'grey'
+            chips.append({
+                'component': 'VChip',
+                'props': {
+                    'color': chip_color,
+                    'label': True,
+                    'class': 'ma-1'
+                },
+                'text': name
+            })
+        
+        # 状态卡片颜色
+        def get_status_color():
+            if network_connected and selection_success:
+                return 'primary'  # 固定色，不再随机
+            else:
+                return 'grey'
+        status_color = get_status_color()
+        
+        # 状态区配色方案
+        plugin_status_color = 'success' if enabled else 'grey'
+        datacenter_color = 'info'
+        last_time_color = 'purple'
+        hosts_ip_color = 'warning'
+
         cards = [
             {'component': 'VCardTitle', 'props': {'class': 'text-h6 font-weight-bold', 'style': 'display: flex; align-items: center;'},
              'content': [
@@ -946,60 +1422,43 @@ class CFIPSelector(_PluginBase):
             {'component': 'VDivider', 'props': {'class': 'mb-2'}},
             {'component': 'VRow', 'content': [
                 {'component': 'VCol', 'props': {'cols': 4, 'class': 'd-flex align-center'}, 'content': [
-                    {'component': 'VIcon', 'props': {'icon': 'mdi-power', 'color': 'success' if enabled else 'grey', 'class': 'mr-1'}},
                     {'component': 'span', 'text': '插件状态'}
                 ]},
                 {'component': 'VCol', 'props': {'cols': 8, 'class': 'd-flex align-center'}, 'content': [
                     {'component': 'VChip', 'props': {
-                        'color': 'success' if enabled else 'grey',
+                        'color': plugin_status_color,
                         'label': True
                     }, 'text': '已启用' if enabled else '已禁用'}
                 ]}
             ]},
             {'component': 'VRow', 'content': [
                 {'component': 'VCol', 'props': {'cols': 4, 'class': 'd-flex align-center'}, 'content': [
-                    {'component': 'VIcon', 'props': {'icon': 'mdi-database-search', 'color': 'info', 'class': 'mr-1'}},
                     {'component': 'span', 'text': '目标数据中心'}
                 ]},
                 {'component': 'VCol', 'props': {'cols': 8, 'class': 'd-flex align-center'}, 'content': [
-                    {'component': 'VChip', 'props': {'color': 'info', 'label': True}, 'text': datacenters or '未设置'}
+                    {'component': 'VChip', 'props': {'color': datacenter_color, 'label': True}, 'text': datacenters or '未设置'}
                 ]}
             ]},
             {'component': 'VRow', 'content': [
                 {'component': 'VCol', 'props': {'cols': 4, 'class': 'd-flex align-center'}, 'content': [
-                    {'component': 'VIcon', 'props': {'icon': 'mdi-clock-outline', 'color': 'primary', 'class': 'mr-1'}},
                     {'component': 'span', 'text': '上次优选时间'}
                 ]},
                 {'component': 'VCol', 'props': {'cols': 8, 'class': 'd-flex align-center'}, 'content': [
-                    {'component': 'VChip', 'props': {'color': 'primary', 'label': True}, 'text': last_select_time}
+                    {'component': 'VChip', 'props': {'color': last_time_color, 'label': True}, 'text': last_select_time}
                 ]}
             ]},
             {'component': 'VRow', 'content': [
                 {'component': 'VCol', 'props': {'cols': 4, 'class': 'd-flex align-center'}, 'content': [
-                    {'component': 'VIcon', 'props': {'icon': 'mdi-lan', 'color': 'primary', 'class': 'mr-1'}},
                     {'component': 'span', 'text': '当前 hosts IP'}
                 ]},
                 {'component': 'VCol', 'props': {'cols': 8, 'class': 'd-flex align-center'}, 'content': [
-                    {'component': 'VChip', 'props': {'color': 'primary', 'label': True}, 'text': last_ip}
+                    {'component': 'VChip', 'props': {'color': hosts_ip_color, 'label': True}, 'text': last_ip}
                 ]}
             ]},
         ]
-        chips = []
-        color_choices = ['info', 'success', 'primary', 'warning', 'error', 'secondary']
-        for name in site_names:
-            chips.append({
-                'component': 'VChip',
-                'props': {
-                    'color': random.choice(color_choices),
-                    'label': True,
-                    'class': 'ma-1'
-                },
-                'text': name
-            })
         cards.append({
             'component': 'VCardTitle', 'props': {'class': 'text-h6 font-weight-bold', 'style': 'display: flex; align-items: center;'},
             'content': [
-                {'component': 'VIcon', 'props': {'icon': 'mdi-domain', 'color': 'info', 'size': 24, 'class': 'mr-2'}},
                 {'component': 'span', 'text': f'检测站点（{len(site_names)}）'}
             ]
         })
@@ -1025,3 +1484,36 @@ class CFIPSelector(_PluginBase):
            # logger.info("发送通知成功")
         except Exception as e:
             logger.error(f"推送通知失败: {e}") 
+
+    def _clear_hosts_cfipselector(self):
+        """
+        移除/etc/hosts中# CFIPSelector优选IP及其后面的条目
+        """
+        try:
+            import platform
+            if platform.system() == "Windows":
+                hosts_path = r"c:\windows\system32\drivers\etc\hosts"
+            else:
+                hosts_path = '/etc/hosts'
+            with open(hosts_path, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+            new_lines = []
+            skip = False
+            for line in lines:
+                if line.strip() == "# CFIPSelector优选IP":
+                    # 跳过该注释及其后所有非注释、非空行（即优选IP条目）
+                    skip = True
+                    continue
+                if skip:
+                    # 如果遇到下一个注释或空行，停止跳过
+                    if line.strip().startswith('#') or not line.strip():
+                        skip = False
+                        new_lines.append(line)
+                    # 否则继续跳过
+                    continue
+                new_lines.append(line)
+            with open(hosts_path, 'w', encoding='utf-8') as f:
+                f.writelines(new_lines)
+            #logger.info("已清理/etc/hosts中的CFIPSelector优选IP条目")
+        except Exception as e:
+            logger.error(f"清理hosts失败: {e}") 
