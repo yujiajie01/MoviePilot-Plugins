@@ -82,7 +82,7 @@ class DoubanApi:
                 logger.error("请求的资源未找到（可能是条目不存在或ID错误）")
             else:
                 logger.error(error_msg)
-            return None
+            return None, None
         # self.headers["Cookie"] = response.cookies
         soup = BeautifulSoup(response.text.encode('utf-8'), 'lxml')
         title_divs = soup.find_all("div", class_="title")
@@ -108,7 +108,8 @@ class DoubanApi:
             # 检测cookie时静默处理
             if title == "肖申克的救赎":
                 return None, None
-            logger.error(f"找不到 {title} 相关条目，本条目不存在于豆瓣")
+            logger.warn(f"找不到 {title} 相关条目，本条目不存在于豆瓣")
+            return None, None
         for subject_item in subject_items:
             # logger.debug(f"{subject_item['title']} {subject_item['subject_id']}")
             return subject_item["title"], subject_item["subject_id"]

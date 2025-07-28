@@ -120,14 +120,15 @@
     }
   },
   "DoubanFolio": {
-    "name": "豆瓣观影同步档案(自用版)",
+    "name": "豆瓣观影档案(自用版)",
     "description": "自动同步你的观影、追剧进度到豆瓣，打造专属观影档案。",
     "labels": "豆瓣",
-    "version": "1.0",
-    "icon": "douban.png",
+    "version": "1.0.1",
+    "icon": "https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/douban.png",
     "author": "M.Jinxi",
     "level": 2,
     "history": {
+      "v1.0.1": "优化通知逻辑",
       "v1.0": "首个自用版本"
     }
   }

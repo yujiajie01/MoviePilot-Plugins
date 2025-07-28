@@ -18,13 +18,13 @@ lock = threading.Lock()
 
 class DoubanFolio(_PluginBase):
     # 插件名称
-    plugin_name = "豆瓣观影同步档案(自用版)"
+    plugin_name = "豆瓣观影档案(自用版)"
     # 插件描述
     plugin_desc = "自动同步你的观影、追剧进度到豆瓣，打造专属观影档案。"
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/douban.png"
     # 插件版本
-    plugin_version = "1.0"
+    plugin_version = "1.0.1"
     # 插件作者
     plugin_author = "M.Jinxi"
     # 作者主页
@@ -75,7 +75,7 @@ class DoubanFolio(_PluginBase):
             logger.warn("检测到本插件旧版本数据，删除旧版本数据，避免报错...")
 
         if self._enable:
-            logger.info("豆瓣观影同步档案插件已启用")
+            logger.info("豆瓣观影档案插件已启用")
 
     @eventmanager.register(EventType.WebhookMessage)
     def sync_log(self, event: Event, played: bool = False):
@@ -91,29 +91,36 @@ class DoubanFolio(_PluginBase):
                 self._last_skip_log_time = now
             return
         try:
-            # 新增：每次都检测cookie有效性
+            # 优化：减少cookie检测频率，只在必要时检测
             import time
-            if not hasattr(self, '_last_cookie_invalid_time'):
-                self._last_cookie_invalid_time = 0
-            # 用真实存在的电影名检测cookie有效性，避免误判
-            try:
-                douban_helper = DoubanApi(user_cookie=self._cookie)
-                subject_name, subject_id = douban_helper.get_subject_id(title="肖申克的救赎")
-            except Exception:
-                subject_id = None  # 检测异常时静默处理
+            if not hasattr(self, '_last_cookie_check_time'):
+                self._last_cookie_check_time = 0
             now = time.time()
-            if subject_id:
-                # 10分钟内只输出一次cookie有效日志
-                if not hasattr(self, '_last_cookie_valid_time'):
-                    self._last_cookie_valid_time = 0
-                if now - self._last_cookie_valid_time > 600:
-                    logger.info("cookie有效性检测通过")
-                    self._last_cookie_valid_time = now
-            else:
-                # 10分钟内只推送一次失效通知
-                if now - self._last_cookie_invalid_time > 600:
-                    self._send_notification(False, "豆瓣cookie可能已失效，请及时更换！")
-                    self._last_cookie_invalid_time = now
+            # 每小时只检测一次cookie有效性，避免频繁检测
+            if now - self._last_cookie_check_time > 3600:  # 1小时
+                if not hasattr(self, '_last_cookie_invalid_time'):
+                    self._last_cookie_invalid_time = 0
+                # 用真实存在的电影名检测cookie有效性，避免误判
+                try:
+                    douban_helper = DoubanApi(user_cookie=self._cookie)
+                    subject_name, subject_id = douban_helper.get_subject_id(title="肖申克的救赎")
+                except Exception:
+                    subject_id = None  # 检测异常时静默处理
+                
+                if subject_id:
+                    # 10分钟内只输出一次cookie有效日志
+                    if not hasattr(self, '_last_cookie_valid_time'):
+                        self._last_cookie_valid_time = 0
+                    if now - self._last_cookie_valid_time > 600:
+                        logger.info("cookie有效性检测通过")
+                        self._last_cookie_valid_time = now
+                else:
+                    # 10分钟内只推送一次失效通知
+                    if now - self._last_cookie_invalid_time > 600:
+                        self._send_notification(False, "豆瓣cookie可能已失效，请及时更换！")
+                        self._last_cookie_invalid_time = now
+                self._last_cookie_check_time = now
+            
             event_info: WebhookEventInfo = event.event_data
             play_start = {"playback.start", "media.play", "PlaybackStart"}
             path = event_info.item_path
@@ -224,7 +231,7 @@ class DoubanFolio(_PluginBase):
     def _send_notification(self, success: bool, message: str):
         if not self._notify:
             return
-        title = f"豆瓣观影同步档案 {'成功' if success else '失败'}"
+        title = f"豆瓣观影档案 {'成功' if success else '失败'}"
         text_content = message.strip()
         text_content += f"\n时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
         try:
@@ -288,8 +295,8 @@ class DoubanFolio(_PluginBase):
                 self._send_notification(False, f"《{title}》同步到豆瓣档案失败，请检查cookie或网络。")
         else:
             logger.warn(f"获取 {title} subject_id 失败，本条目不存在于豆瓣")
-            # 只要 subject_id 为 None，无条件推送 cookie 失效通知
-            self._send_notification(False, "豆瓣cookie可能已失效，请及时更换！")
+            # 豆瓣上没有找到剧集，这是正常情况，不推送失败通知
+            # 只有在cookie检测失败时才会推送通知
         return False
 
     def get_form(self) -> Tuple[List[dict], Dict[str, Any]]:
