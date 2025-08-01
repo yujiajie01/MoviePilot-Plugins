@@ -22,15 +22,17 @@ from app.log import logger
 from app.plugins import _PluginBase
 from app.schemas import NotificationType
 
+from .ip_group_manager import IPGroupManager
+
 class IkuaiRouterBackup(_PluginBase):
     # 插件名称
     plugin_name = "爱快路由时光机"
     # 插件描述
-    plugin_desc = "轻松备份与恢复您的爱快路由配置，就像使用时光机一样简单。"
+    plugin_desc = "轻松配置您的爱快路由，让路由管理更简单"
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/ikuai.png"
     # 插件版本
-    plugin_version = "1.2.1"
+    plugin_version = "1.3.0"
     # 插件作者
     plugin_author = "M.Jinxi"
     # 作者主页
@@ -52,6 +54,16 @@ class IkuaiRouterBackup(_PluginBase):
     _global_task_lock: Optional[threading.Lock] = None  # 全局任务锁，协调备份和恢复任务
     _backup_activity: str = "空闲"  # 备份活动状态
     _restore_activity: str = "空闲"  # 恢复活动状态
+
+    # IP分组配置属性
+    _enable_ip_group: bool = False  # 启用IP分组功能
+    _ip_group_province: str = ""  # 省份
+    _ip_group_city: str = ""  # 城市
+    _ip_group_isp: str = ""  # 运营商
+    _ip_group_prefix: str = ""  # 分组前缀
+    _ip_group_address_pool: bool = False  # 是否绑定地址池
+    _ip_group_sync_now: bool = False  # 立即同步开关
+    _ip_group_activity: str = "空闲"  # IP分组活动状态
 
     # 配置属性
     _enabled: bool = False
@@ -125,6 +137,16 @@ class IkuaiRouterBackup(_PluginBase):
             self._restore_force = bool(config.get("restore_force", False))
             self._restore_file = str(config.get("restore_file", ""))
             self._restore_now = bool(config.get("restore_now", False))
+            
+            # IP分组配置
+            self._enable_ip_group = bool(config.get("enable_ip_group", False))
+            self._ip_group_province = str(config.get("ip_group_province", ""))
+            self._ip_group_city = str(config.get("ip_group_city", ""))
+            self._ip_group_isp = str(config.get("ip_group_isp", ""))
+            self._ip_group_prefix = str(config.get("ip_group_prefix", ""))
+            self._ip_group_address_pool = bool(config.get("ip_group_address_pool", False))
+            self._ip_group_sync_now = bool(config.get("ip_group_sync_now", False))
+            
             self.__update_config()
 
             # 处理清理历史记录请求
@@ -158,6 +180,26 @@ class IkuaiRouterBackup(_PluginBase):
                 except Exception as e:
                     logger.error(f"启动一次性 {self.plugin_name} 任务失败: {str(e)}")
     
+        # 处理IP分组同步任务
+        if self._ip_group_sync_now:
+            try:
+                if not self._scheduler or not self._scheduler.running:
+                     self._scheduler = BackgroundScheduler(timezone=settings.TZ)
+                job_name = f"{self.plugin_name}IP分组同步_onlyonce"
+                if self._scheduler.get_job(job_name):
+                    self._scheduler.remove_job(job_name)
+                logger.info(f"{self.plugin_name} IP分组同步服务启动，立即运行一次")
+                self._scheduler.add_job(func=self.run_ip_group_sync_job, trigger='date',
+                                     run_date=datetime.now(tz=pytz.timezone(settings.TZ)) + timedelta(seconds=3),
+                                     name=job_name, id=job_name)
+                self._ip_group_sync_now = False
+                self.__update_config()
+                if self._scheduler and not self._scheduler.running:
+                    self._scheduler.print_jobs()
+                    self._scheduler.start()
+            except Exception as e:
+                logger.error(f"启动一次性 {self.plugin_name} IP分组同步任务失败: {str(e)}")
+
     def _load_backup_history(self) -> List[Dict[str, Any]]:
         history = self.get_data('backup_history')
         if history is None:
@@ -203,6 +245,14 @@ class IkuaiRouterBackup(_PluginBase):
             "restore_force": self._restore_force,
             "restore_file": self._restore_file,
             "restore_now": self._restore_now,
+            # IP分组配置
+            "enable_ip_group": self._enable_ip_group,
+            "ip_group_province": self._ip_group_province,
+            "ip_group_city": self._ip_group_city,
+            "ip_group_isp": self._ip_group_isp,
+            "ip_group_prefix": self._ip_group_prefix,
+            "ip_group_address_pool": self._ip_group_address_pool,
+            "ip_group_sync_now": self._ip_group_sync_now,
         })
 
     def get_state(self) -> bool:
@@ -212,13 +262,64 @@ class IkuaiRouterBackup(_PluginBase):
         return []
 
     def get_api(self) -> List[Dict[str, Any]]:
+        """获取API接口"""
         return [
             {
+                "path": "/backup",
+                "method": "POST",
+                "description": "执行备份",
+                "data": {
+                    "onlyonce": "是否立即执行"
+                }
+            },
+            {
                 "path": "/restore",
-                "endpoint": self._api_restore_backup,
-                "methods": ["POST"],
-                "summary": "执行恢复操作使用的API",
-                "description": "执行恢复操作",
+                "method": "POST", 
+                "description": "执行恢复",
+                "data": {
+                    "filename": "备份文件名",
+                    "source": "备份来源"
+                }
+            },
+            {
+                "path": "/sync_ip_groups",
+                "method": "POST",
+                "description": "同步IP分组",
+                "data": {
+                    "province": "省份",
+                    "city": "城市", 
+                    "isp": "运营商",
+                    "group_prefix": "分组前缀",
+                    "address_pool": "是否绑定地址池"
+                }
+            },
+            {
+                "path": "/get_ip_blocks_info",
+                "method": "GET",
+                "description": "获取IP段信息",
+                "data": {
+                    "province": "省份",
+                    "city": "城市",
+                    "isp": "运营商"
+                }
+            },
+            {
+                "path": "/get_available_options",
+                "method": "GET",
+                "description": "获取可用选项"
+            },
+            {
+                "path": "/get_cities_by_province",
+                "method": "GET",
+                "description": "根据省份获取城市列表",
+                "data": {
+                    "province": "省份"
+                }
+            },
+            {
+                "path": "/test_ip_group",
+                "method": "POST",
+                "description": "测试IP分组创建"
             }
         ]
 
@@ -583,6 +684,103 @@ class IkuaiRouterBackup(_PluginBase):
                     }
                 ]
             },
+            'ip_group': {
+                'icon': 'mdi-ip-network', 'title': 'IP分组设置', 'content': [
+                    {
+                        'component': 'VCard',
+                        'props': {'variant': 'outlined', 'class': 'mb-4'},
+                        'content': [
+                            {
+                                'component': 'VCardTitle',
+                                'props': {'class': 'text-h6'},
+                                'text': '🌐 IP分组管理'
+                            },
+                            {
+                                'component': 'VCardText',
+                                'content': [
+                                    {
+                                        'component': 'VRow',
+                                        'content': [
+                                            {'component': 'VCol', 'props': {'cols': 12, 'md': 4}, 'content': [
+                                                {'component': 'VSwitch', 'props': {
+                                                    'model': 'enable_ip_group', 
+                                                    'label': '启用IP分组功能', 
+                                                    'color': 'primary'
+                                                }}
+                                            ]},
+                                            {'component': 'VCol', 'props': {'cols': 12, 'md': 4}, 'content': [
+                                                {'component': 'VSwitch', 'props': {
+                                                    'model': 'ip_group_address_pool', 
+                                                    'label': '绑定地址池', 
+                                                    'color': 'info'
+                                                }}
+                                            ]},
+                                            {'component': 'VCol', 'props': {'cols': 12, 'md': 4}, 'content': [
+                                                {'component': 'VSwitch', 'props': {
+                                                    'model': 'ip_group_sync_now', 
+                                                    'label': '立即同步IP分组', 
+                                                    'color': 'success', 
+                                                    'prepend-icon': 'mdi-sync'
+                                                }}
+                                            ]}
+                                        ]
+                                    },
+                                    {
+                                        'component': 'VAlert',
+                                        'props': {
+                                            'type': 'warning',
+                                            'variant': 'tonal',
+                                            'text': '警告：由于爱快限制，IP分组无法自动覆盖删除，如需重新同步请先手动删除现有分组。',
+                                            'density': 'compact',
+                                            'class': 'mt-2'
+                                        }
+                                    },
+                                    {'component': 'VTextField', 'props': {
+                                        'model': 'ip_group_province', 
+                                        'label': '省份', 
+                                        'placeholder': '例如: 北京', 
+                                        'prepend-inner-icon': 'mdi-map-marker',
+                                        'class': 'mt-4'
+                                    }},
+                                    {'component': 'VTextField', 'props': {
+                                        'model': 'ip_group_city', 
+                                        'label': '城市', 
+                                        'placeholder': '例如: 北京', 
+                                        'prepend-inner-icon': 'mdi-city',
+                                        'class': 'mt-4'
+                                    }},
+                                    {'component': 'VTextField', 'props': {
+                                        'model': 'ip_group_isp', 
+                                        'label': '运营商', 
+                                        'placeholder': '例如: 电信', 
+                                        'prepend-inner-icon': 'mdi-network',
+                                        'class': 'mt-4'
+                                    }},
+                                    {'component': 'VTextField', 'props': {
+                                        'model': 'ip_group_prefix', 
+                                        'label': '分组前缀', 
+                                        'placeholder': '留空则使用"省份_城市_运营商"格式', 
+                                        'prepend-inner-icon': 'mdi-tag',
+                                        'class': 'mt-4'
+                                    }},
+                                    {
+                                        'component': 'VAlert', 'props': {
+                                            'type': 'info',
+                                            'color': 'info',
+                                            'outlined': True,
+                                            'dense': True,
+                                            'class': 'mt-4'
+                                        }, 'content': [
+                                            {'component': 'span', 'text': '配置说明参考: '},
+                                            {'component': 'a', 'props': {'href': 'https://github.com/xijin285/MoviePilot-Plugins/tree/main/plugins.v2/ikuairouterbackup/README.md', 'target': '_blank', 'style': 'color:#2196f3;text-decoration:underline;'}, 'text': 'README'}
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            },
             'help': {
                 'icon': 'mdi-help-circle', 'title': '使用说明', 'content': [
                     {
@@ -693,7 +891,15 @@ class IkuaiRouterBackup(_PluginBase):
             "clear_history": self._clear_history,  # 新增：清理历史记录开关
             "delete_after_backup": self._delete_after_backup,
             "enable_restore": self._enable_restore,
-            "restore_force": self._restore_force, "restore_file": self._restore_file, "restore_now": self._restore_now
+            "restore_force": self._restore_force, "restore_file": self._restore_file, "restore_now": self._restore_now,
+            # IP分组配置
+            "enable_ip_group": self._enable_ip_group,
+            "ip_group_province": self._ip_group_province,
+            "ip_group_city": self._ip_group_city,
+            "ip_group_isp": self._ip_group_isp,
+            "ip_group_prefix": self._ip_group_prefix,
+            "ip_group_address_pool": self._ip_group_address_pool,
+            "ip_group_sync_now": self._ip_group_sync_now,
         }
 
         return form_structure, default_values
@@ -707,6 +913,7 @@ class IkuaiRouterBackup(_PluginBase):
         # 确定显示状态和颜色
         backup_display_status = self._backup_activity
         restore_display_status = self._restore_activity
+        ip_group_display_status = self._ip_group_activity
 
         if backup_display_status == "空闲":
             backup_status_color = "success"
@@ -721,6 +928,13 @@ class IkuaiRouterBackup(_PluginBase):
             restore_status_color = "error"
         else:
             restore_status_color = "warning"
+
+        if ip_group_display_status == "空闲":
+            ip_group_status_color = "success"
+        elif "失败" in ip_group_display_status:
+            ip_group_status_color = "error"
+        else:
+            ip_group_status_color = "warning"
 
         status_card = {
             'component': 'VCard',
@@ -770,6 +984,14 @@ class IkuaiRouterBackup(_PluginBase):
                                         'prepend_icon': 'mdi-cloud-outline'
                                     }, 'text': f"WebDAV备份: {webdav_backup_count} 个"}
                                 ]}] if self._enable_webdav else []),
+                                *([{'component': 'VCol', 'props': {'cols': 'auto', 'class': 'ml-2'}, 'content': [
+                                    {'component': 'VChip', 'props': {
+                                        'color': ip_group_status_color,
+                                        'variant': 'elevated',
+                                        'label': True,
+                                        'prepend_icon': 'mdi-ip-network'
+                                    }, 'text': f"IP分组状态: {ip_group_display_status}"}
+                                ]}] if self._enable_ip_group else []),
                                 {'component': 'VSpacer'},
                                 {'component': 'VCol', 'props': {'cols': 'auto'}, 'content': [
                                     {'component': 'div', 'props': {'class': 'd-flex align-center text-h6'}, 'content':[
@@ -991,6 +1213,158 @@ class IkuaiRouterBackup(_PluginBase):
                 try: self._lock.release()
                 except RuntimeError: pass
             logger.info(f"{self.plugin_name} 任务执行完成。")
+
+    def run_ip_group_sync_job(self):
+        """运行IP分组同步任务"""
+        if not self._lock: 
+            self._lock = threading.Lock()
+        if not self._lock.acquire(blocking=False):
+            logger.debug(f"{self.plugin_name} IP分组同步任务已有任务正在执行，本次调度跳过！")
+            return
+            
+        try:
+            self._ip_group_activity = "正在同步"
+            logger.info(f"开始执行 {self.plugin_name} IP分组同步任务...")
+
+            if not self._ikuai_url or not self._ikuai_username or not self._ikuai_password:
+                error_msg = "配置不完整：URL、用户名或密码未设置。"
+                logger.error(f"{self.plugin_name} {error_msg}")
+                self._send_notification(success=False, message=error_msg)
+                return
+
+            logger.info(f"{self.plugin_name} 正在创建IP分组管理器...")
+            # 创建IP分组管理器
+            ip_manager = IPGroupManager(
+                ikuai_url=self._ikuai_url,
+                username=self._ikuai_username,
+                password=self._ikuai_password
+            )
+            
+            logger.info(f"{self.plugin_name} 正在获取IP段信息，请稍候...")
+            # 执行同步
+            success, message = ip_manager.sync_ip_groups_from_22tool(
+                province=self._ip_group_province,
+                city=self._ip_group_city,
+                isp=self._ip_group_isp,
+                group_prefix=self._ip_group_prefix,
+                address_pool=self._ip_group_address_pool
+            )
+            
+            if success:
+                logger.info(f"{self.plugin_name} IP分组同步成功: {message}")
+                self._send_notification(success=True, message=message)
+            else:
+                logger.error(f"{self.plugin_name} IP分组同步失败: {message}")
+                self._send_notification(success=False, message=message)
+                
+        except Exception as e:
+            error_msg = f"IP分组同步任务执行异常: {str(e)}"
+            logger.error(f"{self.plugin_name} {error_msg}")
+            self._send_notification(success=False, message=error_msg)
+        finally:
+            self._ip_group_activity = "空闲"
+            if self._lock and self._lock.locked():
+                self._lock.release()
+
+    def _api_sync_ip_groups(self, province: str = "", city: str = "", isp: str = "", 
+                           group_prefix: str = "", address_pool: bool = False) -> Dict[str, Any]:
+        """API接口：同步IP分组"""
+        try:
+            if not self._ikuai_url or not self._ikuai_username or not self._ikuai_password:
+                return {"success": False, "message": "配置不完整：URL、用户名或密码未设置。"}
+            
+            # 创建IP分组管理器
+            ip_manager = IPGroupManager(
+                ikuai_url=self._ikuai_url,
+                username=self._ikuai_username,
+                password=self._ikuai_password
+            )
+            
+            # 执行同步
+            success, message = ip_manager.sync_ip_groups_from_22tool(
+                province=province,
+                city=city,
+                isp=isp,
+                group_prefix=group_prefix,
+                address_pool=address_pool
+            )
+            
+            return {"success": success, "message": message}
+            
+        except Exception as e:
+            error_msg = f"API同步IP分组异常: {str(e)}"
+            logger.error(f"{self.plugin_name} {error_msg}")
+            return {"success": False, "message": error_msg}
+
+    def _api_get_ip_blocks_info(self, province: str = "", city: str = "", isp: str = "") -> Dict[str, Any]:
+        """API接口：获取IP段信息"""
+        try:
+            # 创建IP分组管理器
+            ip_manager = IPGroupManager(
+                ikuai_url=self._ikuai_url,
+                username=self._ikuai_username,
+                password=self._ikuai_password
+            )
+            
+            # 获取IP段信息
+            ip_blocks = ip_manager.get_ip_blocks_from_22tool(province, city, isp)
+            
+            return {
+                "success": True,
+                "data": ip_blocks,
+                "count": len(ip_blocks)
+            }
+            
+        except Exception as e:
+            error_msg = f"获取IP段信息异常: {str(e)}"
+            logger.error(f"{self.plugin_name} {error_msg}")
+            return {"success": False, "message": error_msg}
+
+    def _api_get_available_options(self) -> Dict[str, Any]:
+        """API接口：获取可用的省份、城市、运营商选项"""
+        try:
+            # 创建IP分组管理器
+            ip_manager = IPGroupManager(
+                ikuai_url=self._ikuai_url,
+                username=self._ikuai_username,
+                password=self._ikuai_password
+            )
+            
+            provinces = ip_manager.get_available_provinces()
+            isps = ip_manager.get_available_isps()
+            
+            return {
+                "success": True,
+                "provinces": provinces,
+                "isps": isps
+            }
+            
+        except Exception as e:
+            error_msg = f"获取可用选项异常: {str(e)}"
+            logger.error(f"{self.plugin_name} {error_msg}")
+            return {"success": False, "message": error_msg}
+
+    def _api_get_cities_by_province(self, province: str) -> Dict[str, Any]:
+        """API接口：根据省份获取城市列表"""
+        try:
+            # 创建IP分组管理器
+            ip_manager = IPGroupManager(
+                ikuai_url=self._ikuai_url,
+                username=self._ikuai_username,
+                password=self._ikuai_password
+            )
+            
+            cities = ip_manager.get_available_cities(province)
+            
+            return {
+                "success": True,
+                "cities": cities
+            }
+            
+        except Exception as e:
+            error_msg = f"获取城市列表异常: {str(e)}"
+            logger.error(f"{self.plugin_name} {error_msg}")
+            return {"success": False, "message": error_msg}
 
     def _perform_backup_once(self) -> Tuple[bool, Optional[str], Optional[str]]:
         session = requests.Session()
@@ -2070,7 +2444,7 @@ class IkuaiRouterBackup(_PluginBase):
             # 简约星线
             divider = "★━━━━━━━━━━━━━━━━━━━━━━━★"
             status_prefix = "📌"
-            router_prefix = "🌐"
+            router_prefix = "��"
             file_prefix = "📁"
             info_prefix = "ℹ️"
             congrats = "\n🎉 恢复任务已顺利完成！"
@@ -2211,3 +2585,27 @@ class IkuaiRouterBackup(_PluginBase):
         except Exception as e:
             logger.error(f"{self.plugin_name} 删除备份文件过程中发生未知错误: {e}")
             return False, str(e)
+
+    def _api_test_ip_group(self) -> Dict[str, Any]:
+        """测试IP分组创建API"""
+        try:
+            if not self._enable_ip_group:
+                return {"code": 1, "msg": "IP分组功能未启用"}
+            
+            if not self._ikuai_url or not self._ikuai_username or not self._ikuai_password:
+                return {"code": 1, "msg": "爱快路由器配置不完整"}
+            
+            # 创建IP分组管理器
+            ip_manager = IPGroupManager(self._ikuai_url, self._ikuai_username, self._ikuai_password)
+            
+            # 测试创建最简单的IP分组
+            success, error = ip_manager.test_create_simple_ip_group()
+            
+            if success:
+                return {"code": 0, "msg": "测试IP分组创建成功"}
+            else:
+                return {"code": 1, "msg": f"测试IP分组创建失败: {error}"}
+                
+        except Exception as e:
+            logger.error(f"{self.plugin_name} 测试IP分组创建异常: {str(e)}")
+            return {"code": 1, "msg": f"测试IP分组创建异常: {str(e)}"}

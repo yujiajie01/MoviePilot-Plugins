@@ -1,13 +1,14 @@
 {
   "IkuaiRouterBackup": {
     "name": "爱快路由时光机",
-    "description": "轻松备份与恢复您的爱快路由配置，就像使用时光机一样简单",
+    "description": "轻松配置您的爱快路由，让路由管理更简单",
     "labels": "备份,自动化",
-    "version": "1.2.1",
+    "version": "1.3.0",
     "icon": "https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/ikuai.png",
     "author": "M.Jinxi",
     "level": 2,
     "history": {
+      "v1.3.0": "新增IP分组功能，支持自动同步IP段到爱快",
       "v1.2.1": "兼容主程序API报错问题",
       "v1.2.0": "新增恢复功能，支持从本地和WebDAV备份恢复配置，并优化UI",
       "v1.1.8": "新增一键清理历史记录功能",
