@@ -33,7 +33,7 @@ class CFIPSelector(_PluginBase):
     plugin_name = "PT云盾优选"
     plugin_desc = "PT站点专属优选IP，自动写入hosts，访问快人一步"
     plugin_icon = "https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/cfipselector.png"
-    plugin_version = "1.1.1"
+    plugin_version = "1.1.2"
     plugin_author = "M.Jinxi"
     author_url = "https://github.com/xijin285"
     plugin_config_prefix = "cfipselector_"
@@ -46,7 +46,7 @@ class CFIPSelector(_PluginBase):
     _cron: str = "0 3 * * *"
     _onlyonce: bool = False
     _notify: bool = False
-    _datacenters: str = "HKG,SJC"
+    _datacenters: str = "SJC,YYZ"
     _delay: int = 1500
     _ip_type: str = "4"
     _port: int = 443
@@ -89,7 +89,7 @@ class CFIPSelector(_PluginBase):
             self._cron = str(config.get("cron", "0 3 * * *"))
             self._onlyonce = bool(config.get("onlyonce", False))
             self._notify = bool(config.get("notify", False))
-            self._datacenters = str(config.get("datacenters", "HKG,SJC"))
+            self._datacenters = str(config.get("datacenters", "SJC,YYZ"))
             self._delay = int(config.get("delay", 1500))
             self._ip_type = str(config.get("ip_type", "4"))
             self._port = int(config.get("port", 443))
@@ -429,7 +429,8 @@ class CFIPSelector(_PluginBase):
             # 内置站点
             for site in self.siteoper.list_active():
                 if str(site.id) in sign_sites:
-                    infos.append({"id": str(site.id), "name": getattr(site, "name", str(site.id)), "domain": site.domain})
+                    full_domain = self._get_site_full_domain(site)
+                    infos.append({"id": str(site.id), "name": getattr(site, "name", str(site.id)), "domain": full_domain})
             # 自定义站点
             try:
                 custom_sites_config = self.get_config("CustomSites")
@@ -437,7 +438,13 @@ class CFIPSelector(_PluginBase):
                     custom_sites = custom_sites_config.get("sites")
                     for site in custom_sites:
                         if str(site.get("id")) in sign_sites:
-                            infos.append({"id": str(site.get("id")), "name": site.get("name", str(site.get("id"))), "domain": site.get("domain")})
+                            # 对于自定义站点，使用新的域名获取逻辑
+                            domain = site.get("domain", "")
+                            if domain:
+                                # 检查是否包含前缀
+                                if not domain.startswith(('www.', 'pt.', 'tracker.', 'api.', 'cdn.', 'static.')):
+                                    domain = 'www.' + domain  # 默认添加www前缀
+                            infos.append({"id": str(site.get("id")), "name": site.get("name", str(site.get("id"))), "domain": domain})
             except Exception as e:
                 logger.warning(f"获取自定义站点失败: {e}")
         except Exception as e:
@@ -467,7 +474,9 @@ class CFIPSelector(_PluginBase):
             # 获取内置站点
             for site in self.siteoper.list_active():
                 if str(site.id) in sign_sites:
-                    domains.append(site.domain)
+                    full_domain = self._get_site_full_domain(site)
+                    if full_domain:  # 只添加非空域名
+                        domains.append(full_domain)
             # 获取自定义站点
             try:
                 custom_sites_config = self.get_config("CustomSites")
@@ -475,7 +484,13 @@ class CFIPSelector(_PluginBase):
                     custom_sites = custom_sites_config.get("sites")
                     for site in custom_sites:
                         if str(site.get("id")) in sign_sites:
-                            domains.append(site.get("domain"))
+                            # 对于自定义站点，使用新的域名获取逻辑
+                            domain = site.get("domain", "")
+                            if domain:
+                                # 检查是否包含前缀
+                                if not domain.startswith(('www.', 'pt.', 'tracker.', 'api.', 'cdn.', 'static.')):
+                                    domain = 'www.' + domain  # 默认添加www前缀
+                                domains.append(domain)
             except Exception as e:
                 logger.warning(f"获取自定义站点失败: {e}")
         except Exception as e:
@@ -1217,7 +1232,7 @@ class CFIPSelector(_PluginBase):
                         'component': 'VRow',
                         'content': [
                             {'component': 'VCol', 'props': {'cols': 6, 'md': 6}, 'content': [
-                                {'component': 'VTextField', 'props': {'model': 'datacenters', 'label': '数据中心(逗号分隔)', 'placeholder': 'HKG,SJC', 'prepend-inner-icon': 'mdi-database-search', 'hint': '只检测指定数据中心的IP，多个用逗号分隔', 'persistent-hint': True}}]},
+                                {'component': 'VTextField', 'props': {'model': 'datacenters', 'label': '数据中心(逗号分隔)', 'placeholder': 'SJC,YYZ', 'prepend-inner-icon': 'mdi-database-search', 'hint': '只检测指定数据中心的IP，多个用逗号分隔', 'persistent-hint': True}}]},
                             {'component': 'VCol', 'props': {'cols': 6, 'md': 6}, 'content': [
                                 {'component': 'VTextField', 'props': {'model': 'cron', 'label': '定时任务(cron)', 'placeholder': '0 3 * * *', 'prepend-inner-icon': 'mdi-clock-outline', 'hint': '定时自动优选的cron表达式', 'persistent-hint': True}}]},
                         ]
@@ -1517,3 +1532,49 @@ class CFIPSelector(_PluginBase):
             #logger.info("已清理/etc/hosts中的CFIPSelector优选IP条目")
         except Exception as e:
             logger.error(f"清理hosts失败: {e}") 
+
+    def _get_site_full_domain(self, site) -> str:
+        """
+        获取站点的完整域名，优先从MoviePilot站点配置中获取
+        """
+        # 1. 优先使用site.url字段（MoviePilot中通常包含完整的访问地址）
+        if hasattr(site, 'url') and site.url:
+            try:
+                from urllib.parse import urlparse
+                parsed = urlparse(site.url)
+                if parsed.netloc:
+                    logger.debug(f"从site.url获取域名: {parsed.netloc}")
+                    return parsed.netloc
+            except Exception:
+                pass
+        
+        # 2. 使用site.address字段（MoviePilot中可能存储完整地址）
+        if hasattr(site, 'address') and site.address:
+            try:
+                from urllib.parse import urlparse
+                parsed = urlparse(site.address)
+                if parsed.netloc:
+                    logger.debug(f"从site.address获取域名: {parsed.netloc}")
+                    return parsed.netloc
+            except Exception:
+                # 如果address不是URL格式，可能是域名
+                if site.address and not site.address.startswith(('http://', 'https://')):
+                    logger.debug(f"从site.address获取域名: {site.address}")
+                    return site.address
+        
+        # 3. 使用site.domain字段，但检查是否包含前缀
+        domain = getattr(site, 'domain', '')
+        if domain:
+            # 如果domain已经包含前缀，直接返回
+            if domain.startswith(('www.', 'pt.', 'tracker.', 'api.', 'cdn.', 'static.')):
+                logger.debug(f"域名已包含前缀: {domain}")
+                return domain
+            
+            # 如果domain不包含前缀，尝试添加www前缀（最常见）
+            fallback_domain = 'www.' + domain
+            logger.info(f"使用默认www前缀: {fallback_domain}")
+            return fallback_domain
+        
+        # 4. 如果都没有，返回空字符串
+        logger.warning(f"无法获取站点域名: {getattr(site, 'name', 'unknown')}")
+        return ''
