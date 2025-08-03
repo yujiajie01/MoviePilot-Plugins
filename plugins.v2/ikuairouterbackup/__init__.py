@@ -32,7 +32,7 @@ class IkuaiRouterBackup(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/ikuai.png"
     # 插件版本
-    plugin_version = "1.3.0"
+    plugin_version = "1.3.1"
     # 插件作者
     plugin_author = "M.Jinxi"
     # 作者主页
@@ -262,64 +262,56 @@ class IkuaiRouterBackup(_PluginBase):
         return []
 
     def get_api(self) -> List[Dict[str, Any]]:
-        """获取API接口"""
+        """注册插件API"""
         return [
             {
                 "path": "/backup",
-                "method": "POST",
-                "description": "执行备份",
-                "data": {
-                    "onlyonce": "是否立即执行"
-                }
+                "endpoint": self._api_backup,
+                "methods": ["POST"],
+                "auth": "bear",
+                "summary": "执行备份"
             },
             {
                 "path": "/restore",
-                "method": "POST", 
-                "description": "执行恢复",
-                "data": {
-                    "filename": "备份文件名",
-                    "source": "备份来源"
-                }
+                "endpoint": self._api_restore_backup,
+                "methods": ["POST"],
+                "auth": "bear",
+                "summary": "执行恢复"
             },
             {
                 "path": "/sync_ip_groups",
-                "method": "POST",
-                "description": "同步IP分组",
-                "data": {
-                    "province": "省份",
-                    "city": "城市", 
-                    "isp": "运营商",
-                    "group_prefix": "分组前缀",
-                    "address_pool": "是否绑定地址池"
-                }
+                "endpoint": self._api_sync_ip_groups,
+                "methods": ["POST"],
+                "auth": "bear",
+                "summary": "同步IP分组"
             },
             {
                 "path": "/get_ip_blocks_info",
-                "method": "GET",
-                "description": "获取IP段信息",
-                "data": {
-                    "province": "省份",
-                    "city": "城市",
-                    "isp": "运营商"
-                }
+                "endpoint": self._api_get_ip_blocks_info,
+                "methods": ["GET"],
+                "auth": "bear",
+                "summary": "获取IP段信息"
             },
             {
                 "path": "/get_available_options",
-                "method": "GET",
-                "description": "获取可用选项"
+                "endpoint": self._api_get_available_options,
+                "methods": ["GET"],
+                "auth": "bear",
+                "summary": "获取可用选项"
             },
             {
                 "path": "/get_cities_by_province",
-                "method": "GET",
-                "description": "根据省份获取城市列表",
-                "data": {
-                    "province": "省份"
-                }
+                "endpoint": self._api_get_cities_by_province,
+                "methods": ["GET"],
+                "auth": "bear",
+                "summary": "根据省份获取城市列表"
             },
             {
                 "path": "/test_ip_group",
-                "method": "POST",
-                "description": "测试IP分组创建"
+                "endpoint": self._api_test_ip_group,
+                "methods": ["POST"],
+                "auth": "bear",
+                "summary": "测试IP分组创建"
             }
         ]
 
@@ -2609,3 +2601,12 @@ class IkuaiRouterBackup(_PluginBase):
         except Exception as e:
             logger.error(f"{self.plugin_name} 测试IP分组创建异常: {str(e)}")
             return {"code": 1, "msg": f"测试IP分组创建异常: {str(e)}"}
+
+    def _api_backup(self, onlyonce: bool = False):
+        """API备份接口"""
+        try:
+            # 启动备份任务
+            self.run_backup_job()
+            return {"success": True, "message": "备份任务已启动"}
+        except Exception as e:
+            return {"success": False, "message": f"启动备份任务失败: {str(e)}"}

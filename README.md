@@ -17,7 +17,7 @@ MoviePilot第三方插件库，提供了一系列实用的插件来增强MoviePi
 ## 📦 插件列表
 
 #### <img src="https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/ikuai.png" width="32" style="vertical-align:middle;"> 爱快路由备份助手 (IkuaiRouterBackup)
-- **版本**: `v1.3.0`
+- **版本**: `v1.3.1`
 - **作者**: [@M.Jinxi](https://github.com/xijin285)
 
 **简介**：
@@ -43,6 +43,9 @@ MoviePilot第三方插件库，提供了一系列实用的插件来增强MoviePi
     - 实时同步进度提醒
 
 **最新更新**：
+> `v1.3.1`  
+> 🔧 兼容主程序v2.6.9版本API，修复API路由注册问题。  
+> 
 > `v1.3.0`  
 > 🌐 新增IP分组功能，支持自动同步IP段到爱快。  
 > 📍 支持按省份、城市、运营商筛选IP段。  
