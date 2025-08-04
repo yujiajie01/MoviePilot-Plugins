@@ -1,5 +1,5 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
-import { a as cronstrue } from './zh_CN-BW7ak9RT.js';
+import { a as cronstrue } from './zh_CN-CNefNtEK.js';
 import { _ as _export_sfc } from './_plugin-vue_export-helper-pcqpp-6-.js';
 
 const {resolveComponent:_resolveComponent,createVNode:_createVNode,createElementVNode:_createElementVNode,normalizeClass:_normalizeClass,createTextVNode:_createTextVNode,withCtx:_withCtx,toDisplayString:_toDisplayString,openBlock:_openBlock,createBlock:_createBlock,createCommentVNode:_createCommentVNode,createElementBlock:_createElementBlock,Transition:_Transition,renderList:_renderList,Fragment:_Fragment,createStaticVNode:_createStaticVNode} = await importShared('vue');
@@ -113,13 +113,13 @@ const config = reactive({
   ssh_key_file: '',
   enable_local_backup: true,
   backup_path: '/config/plugins/ProxmoxVEBackup/actual_backups',
-  keep_backup_num: 5,
+  keep_backup_num: 0,
   enable_webdav: false,
   webdav_url: '',
   webdav_username: '',
   webdav_password: '',
   webdav_path: '',
-  webdav_keep_backup_num: 5,
+  webdav_keep_backup_num: 0,
   storage_name: 'local',
   backup_vmid: '',
   backup_mode: 'snapshot',
@@ -193,13 +193,13 @@ async function saveConfig() {
       ssh_key_file: String(config.ssh_key_file || ''),
       enable_local_backup: Boolean(config.enable_local_backup),
       backup_path: String(config.backup_path || ''),
-      keep_backup_num: Number(config.keep_backup_num) || 5,
+      keep_backup_num: Number(config.keep_backup_num) || 0,
       enable_webdav: Boolean(config.enable_webdav),
       webdav_url: String(config.webdav_url || ''),
       webdav_username: String(config.webdav_username || ''),
       webdav_password: String(config.webdav_password || ''),
       webdav_path: String(config.webdav_path || ''),
-      webdav_keep_backup_num: Number(config.webdav_keep_backup_num) || 5,
+      webdav_keep_backup_num: Number(config.webdav_keep_backup_num) || 0,
       storage_name: String(config.storage_name || ''),
       backup_vmid: String(config.backup_vmid || ''),
       backup_mode: String(config.backup_mode || ''),
@@ -261,13 +261,13 @@ function resetConfig() {
     ssh_key_file: '',
     enable_local_backup: true,
     backup_path: '/config/plugins/ProxmoxVEBackup/actual_backups',
-    keep_backup_num: 5,
+    keep_backup_num: 0,
     enable_webdav: false,
     webdav_url: '',
     webdav_username: '',
     webdav_password: '',
     webdav_path: '',
-    webdav_keep_backup_num: 5,
+    webdav_keep_backup_num: 0,
     storage_name: 'local',
     backup_vmid: '',
     backup_mode: 'snapshot',
@@ -1083,7 +1083,7 @@ return (_ctx, _cache) => {
               innerHTML: getNavAvatarSVG(node.value)
             }, null, 8, _hoisted_11),
             (_openBlock(), _createElementBlock("svg", _hoisted_12, [
-              _cache[55] || (_cache[55] = _createStaticVNode("<defs data-v-98dcfe40><radialGradient id=\"crystal-gradient\" cx=\"50%\" cy=\"50%\" r=\"50%\" data-v-98dcfe40><stop offset=\"0%\" stop-color=\"#fff\" stop-opacity=\"0.95\" data-v-98dcfe40></stop><stop offset=\"60%\" stop-color=\"#b2ebf2\" stop-opacity=\"0.7\" data-v-98dcfe40></stop><stop offset=\"100%\" stop-color=\"#00eaff\" stop-opacity=\"0.45\" data-v-98dcfe40></stop></radialGradient></defs><circle cx=\"50\" cy=\"50\" r=\"44\" fill=\"url(#crystal-gradient)\" data-v-98dcfe40></circle><ellipse cx=\"38\" cy=\"32\" rx=\"16\" ry=\"7\" fill=\"#fff\" opacity=\"0.35\" data-v-98dcfe40></ellipse>", 3)),
+              _cache[55] || (_cache[55] = _createStaticVNode("<defs data-v-a8ff9cab><radialGradient id=\"crystal-gradient\" cx=\"50%\" cy=\"50%\" r=\"50%\" data-v-a8ff9cab><stop offset=\"0%\" stop-color=\"#fff\" stop-opacity=\"0.95\" data-v-a8ff9cab></stop><stop offset=\"60%\" stop-color=\"#b2ebf2\" stop-opacity=\"0.7\" data-v-a8ff9cab></stop><stop offset=\"100%\" stop-color=\"#00eaff\" stop-opacity=\"0.45\" data-v-a8ff9cab></stop></radialGradient></defs><circle cx=\"50\" cy=\"50\" r=\"44\" fill=\"url(#crystal-gradient)\" data-v-a8ff9cab></circle><ellipse cx=\"38\" cy=\"32\" rx=\"16\" ry=\"7\" fill=\"#fff\" opacity=\"0.35\" data-v-a8ff9cab></ellipse>", 3)),
               _createElementVNode("g", null, [
                 (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(node.particleCount, (n) => {
                   return (_openBlock(), _createElementBlock("circle", {
@@ -1141,7 +1141,7 @@ return (_ctx, _cache) => {
                       modelModifiers: { number: true },
                       label: "SSH端口",
                       type: "number",
-                      min: "1",
+                      min: "0",
                       "prepend-inner-icon": "mdi-numeric",
                       dense: ""
                     }, null, 8, ["modelValue"])
@@ -1256,8 +1256,10 @@ return (_ctx, _cache) => {
                         modelModifiers: { number: true },
                         label: "本地备份保留数量",
                         type: "number",
-                        min: "1",
+                        min: "0",
                         "prepend-inner-icon": "mdi-counter",
+                        hint: "设置为0或留空表示保留全部备份",
+                        "persistent-hint": "",
                         dense: ""
                       }, null, 8, ["modelValue"])
                     ]),
@@ -1332,7 +1334,7 @@ return (_ctx, _cache) => {
                         label: "WebDAV密码",
                         type: showWebdavPassword.value?"text":"password",
                         "append-inner-icon": showWebdavPassword.value?"mdi-eye-off":"mdi-eye",
-                        "onClick:appendInner": _cache[25] || (_cache[25] = $event => (_ctx.$emit("toggle-webdav-password"))),
+                        "onClick:appendInner": _cache[25] || (_cache[25] = $event => (showWebdavPassword.value=!showWebdavPassword.value)),
                         "prepend-inner-icon": "mdi-lock",
                         dense: ""
                       }, null, 8, ["modelValue", "type", "append-inner-icon"])
@@ -1370,8 +1372,10 @@ return (_ctx, _cache) => {
                         modelModifiers: { number: true },
                         label: "WebDAV备份保留数量",
                         type: "number",
-                        min: "1",
+                        min: "0",
                         "prepend-inner-icon": "mdi-counter",
+                        hint: "设置为0或留空表示保留全部备份",
+                        "persistent-hint": "",
                         dense: ""
                       }, null, 8, ["modelValue"])
                     ]),
@@ -1840,6 +1844,6 @@ return (_ctx, _cache) => {
 }
 
 };
-const ConfigComponent = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-98dcfe40"]]);
+const ConfigComponent = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-a8ff9cab"]]);
 
 export { ConfigComponent as default };

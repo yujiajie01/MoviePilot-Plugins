@@ -28,7 +28,7 @@ class ProxmoxVEBackup(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/proxmox.webp"
     # 插件版本
-    plugin_version = "2.1.1"
+    plugin_version = "2.1.2"
     # 插件作者
     plugin_author = "M.Jinxi"
     # 作者主页
@@ -897,7 +897,11 @@ class ProxmoxVEBackup(_PluginBase):
                 logger.warning(f"{self.plugin_name} 自动清理临时空间异常: {e}")
 
     def _cleanup_old_backups(self):
-        if not self._backup_path or self._keep_backup_num <= 0: return
+        if not self._backup_path: return
+        # 如果保留数量为0，表示保留全部备份，不进行清理
+        if self._keep_backup_num <= 0:
+            logger.info(f"{self.plugin_name} 保留数量设置为0，保留全部本地备份文件")
+            return
         try:
             logger.info(f"{self.plugin_name} 开始清理本地备份目录: {self._backup_path}")
             backup_dir = Path(self._backup_path)
@@ -1290,7 +1294,11 @@ class ProxmoxVEBackup(_PluginBase):
 
     def _cleanup_webdav_backups(self):
         """清理WebDAV上的旧备份文件"""
-        if not self._enable_webdav or not self._webdav_url or self._webdav_keep_backup_num <= 0:
+        if not self._enable_webdav or not self._webdav_url:
+            return
+        # 如果保留数量为0，表示保留全部备份，不进行清理
+        if self._webdav_keep_backup_num <= 0:
+            logger.info(f"{self.plugin_name} WebDAV保留数量设置为0，保留全部WebDAV备份文件")
             return
 
         try:
@@ -1570,7 +1578,7 @@ class ProxmoxVEBackup(_PluginBase):
                     f"{divider}\n"
                     f"📣 状态：{status_str}\n"
                     f"🔗 主机：{host_str}\n"
-                    f"📄 备份文件：{file_str}\n"
+                    f"�� 备份文件：{file_str}\n"
                     f"📁 路径：{path_str}\n"
                     f"📋 详情：{detail_str}\n"
                     f"{divider}\n"
@@ -2647,8 +2655,8 @@ class ProxmoxVEBackup(_PluginBase):
         restore_skip_existing = data.get("restore_skip_existing", True)
         if not filename:
             return {"success": False, "message": "缺少文件名参数"}
-        if source != "本地备份":
-            return {"success": False, "message": "仅支持本地备份恢复"}
+        if source not in ["本地备份", "WebDAV备份"]:
+            return {"success": False, "message": f"不支持的备份来源: {source}"}
         # 直接参数传递，不再赋值到self
         try:
             threading.Thread(
