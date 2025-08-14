@@ -24,7 +24,7 @@ class ProxmoxVEBackup(_PluginBase):
     # 插件名称
     plugin_name = "PVE虚拟机守护神"
     # 插件描述
-    plugin_desc = "一站式PVE虚拟化管理平台，智能自动化集成可视化界面高效掌控虚拟机与容器"
+    plugin_desc = "一站式可视化PVE虚拟化管理平台"
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/proxmox.webp"
     # 插件版本

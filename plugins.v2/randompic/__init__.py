@@ -238,7 +238,7 @@ class RandomPic(_PluginBase):
     # 插件名称
     plugin_name = "随机图库"
     # 插件描述
-    plugin_desc = "随机图片API服务，支持横屏/竖屏图片分类，智能适配本地与网络图片源，灵活的随机图片资源"
+    plugin_desc = "随机图片API服务,支持横屏/竖屏图片分类"
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/randompic.png"
     # 插件版本

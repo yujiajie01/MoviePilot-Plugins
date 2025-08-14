@@ -21,7 +21,7 @@ class CnlangSigninV2(_PluginBase):
     # 插件名称
     plugin_name = "国语视界签到V2"
     # 插件描述
-    plugin_desc = "美观实用的签到助手，支持账号监控、数据统计、自动签到。"
+    plugin_desc = "美观实用的签到助手"
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/cnlang.png"
     # 插件版本

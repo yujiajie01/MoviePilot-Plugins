@@ -27,7 +27,7 @@ class OpenWrtBackup(_PluginBase):
     # 插件名称
     plugin_name = "OpenWrt路由备份助手"
     # 插件描述
-    plugin_desc = "为OpenWrt路由提供全自动的配置备份方案，支持本地保存和WebDAV云端备份。"
+    plugin_desc = "为OpenWrt路由提供全自动的配置备份方案"
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/openwrt.png"
     # 插件版本

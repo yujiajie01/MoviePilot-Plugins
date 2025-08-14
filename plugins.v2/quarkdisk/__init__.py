@@ -15,7 +15,7 @@ class QuarkDisk(_PluginBase):
     # 插件名称
     plugin_name = "夸克网盘存储"
     # 插件描述
-    plugin_desc = "为存储系统集成夸克网盘支持。"
+    plugin_desc = "为存储系统集成夸克网盘支持"
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/quark.ico"
     # 插件版本

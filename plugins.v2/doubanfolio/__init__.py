@@ -20,7 +20,7 @@ class DoubanFolio(_PluginBase):
     # 插件名称
     plugin_name = "豆瓣档案(自用版)"
     # 插件描述
-    plugin_desc = "自动同步你的观影、追剧进度到豆瓣，打造专属观影档案。"
+    plugin_desc = "追剧观影自动同步进度到豆瓣，打造专属观影档案"
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/douban.png"
     # 插件版本

@@ -22,8 +22,8 @@
   },
   "CnlangSigninV2": {
     "name": "国语视界签到V2",
-    "description": "美观实用的签到助手，支持账号监控、数据统计、自动签到",
-    "labels": "签到,自动化",
+    "description": "美观实用的签到助手",
+    "labels": "签到",
     "version": "2.5.8",
     "icon": "https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/cnlang.png",
     "author": "M.Jinxi",
@@ -41,7 +41,7 @@
   },
   "OpenWrtBackup": {
     "name": "OpenWrt路由备份助手",
-    "description": "为OpenWrt路由提供全自动的配置备份方案，支持本地保存和WebDAV云端备份",
+    "description": "为OpenWrt路由提供全自动的配置备份方案",
     "labels": "备份,路由器",
     "version": "1.0.1",
     "icon": "https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/openwrt.png",
@@ -55,7 +55,7 @@
   },
   "ProxmoxVEBackup": {
     "name": "PVE虚拟机守护神",
-    "description": "一站式PVE虚拟化管理平台，智能自动化集成可视化界面高效掌控虚拟机与容器",
+    "description": "一站式可视化PVE虚拟化管理平台",
     "labels": "备份,虚拟机",
     "version": "2.1.2",
     "icon": "https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/proxmox.webp",
@@ -79,7 +79,7 @@
   },
   "QuarkDisk": {
     "name": "夸克网盘存储",
-    "description": "为存储系统集成夸克网盘支持，轻松实现云端文件的上传、下载与管理",
+    "description": "为存储系统集成夸克网盘支持",
     "labels": "存储,网盘",
     "version": "1.0.0",
     "icon": "https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/quark.ico",
@@ -125,7 +125,7 @@
   },
   "DoubanFolio": {
     "name": "豆瓣档案(自用版)",
-    "description": "自动同步你的观影、追剧进度到豆瓣，打造专属观影档案。",
+    "description": "追剧观影自动同步进度到豆瓣，打造专属观影档案",
     "labels": "豆瓣",
     "version": "1.0.1",
     "icon": "https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/douban.png",
