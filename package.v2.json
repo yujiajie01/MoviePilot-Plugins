@@ -90,16 +90,17 @@
     }
   },
   "RandomPic": {
-    "name": "随机图库",
+    "name": "随机图床API",
     "description": "随机图片API服务,支持横屏/竖屏图片分类",
-    "labels": "图库",
-    "version": "2.0.0",
+    "labels": "图床,API",
+    "version": "2.1",
     "icon": "https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/randompic.png",
     "author": "M.Jinxi",
     "level": 2,
     "requirements": ["pytz>=2023.3", "apscheduler>=3.10.1", "requests>=2.31.0"],
     "history": {
-      "v2.0.0": "全新2.0VUE版本",
+      "v2.1": "优化联邦UI界面，；提前为“外部消息转发”接入封面接口。感谢KoWming（W佬）的技术助力",
+      "v2.0": "全新2.0联邦VUE版本",
       "v1.0.3": "修复预览页面复制功能，优化日志",
       "v1.0.2": "新增可视化预览页面，统计数据查看",
       "v1.0.1": "禁止缓存实时刷新",

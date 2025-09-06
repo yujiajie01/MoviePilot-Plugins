@@ -236,13 +236,13 @@ class ImageHandler(BaseHTTPRequestHandler):
 
 class RandomPic(_PluginBase):
     # 插件名称
-    plugin_name = "随机图库"
+    plugin_name = "随机图床API"
     # 插件描述
     plugin_desc = "随机图片API服务,支持横屏/竖屏图片分类"
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/randompic.png"
     # 插件版本
-    plugin_version = "2.0.0"
+    plugin_version = "2.1"
     # 插件作者
     plugin_author = "M.Jinxi"
     # 作者主页
@@ -354,9 +354,35 @@ class RandomPic(_PluginBase):
             network_image_url_mobile = data.get("network_image_url_mobile")
             network_image_url = data.get("network_image_url")  # 兼容老配置
 
-            # 参数校验
-            if not port or not pc_path or not mobile_path:
-                return {"success": False, "msg": "端口和图片目录不能为空"}
+            # 参数校验 - 修复：支持网络图片地址配置
+            if not port:
+                return {"success": False, "msg": "端口不能为空"}
+            
+            # 验证端口格式和可用性
+            try:
+                port_num = int(port)
+                if port_num < 1 or port_num > 65535:
+                    return {"success": False, "msg": "端口号必须在1-65535范围内"}
+                
+                # 检查端口是否被占用
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                result = sock.connect_ex(('127.0.0.1', port_num))
+                sock.close()
+                if result == 0:
+                    return {"success": False, "msg": f"端口 {port_num} 已被占用，请选择其他端口"}
+            except ValueError:
+                return {"success": False, "msg": "端口号必须是数字"}
+            except Exception as e:
+                return {"success": False, "msg": f"端口检查失败: {str(e)}"}
+            
+            # 检查是否至少配置了一种图片源（本地或网络）
+            has_pc_source = (pc_path and pc_path.strip()) or (network_image_url_pc and network_image_url_pc.strip())
+            has_mobile_source = (mobile_path and mobile_path.strip()) or (network_image_url_mobile and network_image_url_mobile.strip())
+            
+            if not has_pc_source:
+                return {"success": False, "msg": "必须配置横屏图片源（本地目录或网络地址）"}
+            if not has_mobile_source:
+                return {"success": False, "msg": "必须配置竖屏图片源（本地目录或网络地址）"}
 
             self._enable = enable
             self._port = port
@@ -398,9 +424,42 @@ class RandomPic(_PluginBase):
             for ext in ('*.jpg', '*.jpeg', '*.png', '*.gif', '*.webp'):
                 mobile_count += len(list(Path(self._mobile_path).glob(ext)))
 
+        is_running = self._server and self._server_thread and self._server_thread.is_alive()
+        server_status = "running" if is_running else "stopped"
+
+        # 检查端口状态
+        port_status = "unknown"
+        port_error = ""
+        if self._port:
+            port = int(self._port)
+            # 优先判断服务是否由自身启动且在运行
+            if is_running:
+                port_status = "available"
+            else:
+                # 如果服务未运行，再检查端口是否被其他程序占用
+                try:
+                    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    sock.settimeout(1.0)
+                    result = sock.connect_ex(('127.0.0.1', port))
+                    sock.close()
+                    if result == 0:
+                        port_status = "occupied"
+                        self._last_error = f"端口 {port} 已被其他程序占用"
+                    else:
+                        port_status = "available"
+                except Exception as e:
+                    port_status = "error"
+                    self._last_error = f"端口检查失败: {str(e)}"
+        
+        # 如果服务未运行但有错误信息，则将状态标记为错误
+        if not is_running and self._last_error:
+            server_status = "error"
+
         return {
             "enable": self._enable,
             "port": self._port,
+            "port_status": port_status,
+            "port_error": port_error,
             "pc_path": self._pc_path,
             "mobile_path": self._mobile_path,
             "network_image_url_pc": self._network_image_url_pc,
@@ -410,8 +469,8 @@ class RandomPic(_PluginBase):
             "mobile_count": mobile_count,
             "total_count": pc_count + mobile_count,
             "today_visits": today_visit_count,
-            "server_status": "running" if (self._server and self._server_thread and self._server_thread.is_alive()) else "stopped",
-            "last_error": "",
+            "server_status": server_status,
+            "last_error": self._last_error if hasattr(self, '_last_error') else "",
             "listen_ip": self._listen_ip,
         }
 
@@ -523,14 +582,7 @@ class RandomPic(_PluginBase):
             self._server_thread.start()
             
             # 获取本机IP
-            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            try:
-                s.connect(('8.8.8.8', 80))
-                ip = s.getsockname()[0]
-            except:
-                ip = '127.0.0.1'
-            finally:
-                s.close()
+            ip = self._get_host_ip()
             self._listen_ip = ip
             # 启动服务器
             logger.info(f"随机图库服务启动成功! 访问地址: http://{ip}:{port}/random")
@@ -556,3 +608,124 @@ class RandomPic(_PluginBase):
                 self._server_thread = None
         except Exception as e:
             logger.error(f"停止服务失败: {str(e)}") 
+
+    def _get_host_ip(self) -> str:
+        """
+        获取宿主机真实IP地址，支持Docker环境
+        优先级：环境变量 > 宿主机网络接口 > 外部服务 > 本机IP
+        """
+        # 方法1: 从环境变量获取（用户手动指定，最可靠）
+        host_ip = os.environ.get('HOST_IP') or os.environ.get('HOST_IP_ADDRESS')
+        if host_ip:
+            logger.info(f"从环境变量获取到宿主机IP: {host_ip}")
+            return host_ip
+        
+        # 方法2: 尝试获取宿主机网络接口IP（适用于Docker环境）
+        host_interface_ip = self._get_host_interface_ip()
+        if host_interface_ip:
+            logger.info(f"从宿主机网络接口获取到IP: {host_interface_ip}")
+            return host_interface_ip
+        
+        # 方法3: 通过外部服务获取公网IP
+        public_ip = self._get_public_ip()
+        if public_ip:
+            logger.info(f"从外部服务获取到公网IP: {public_ip}")
+            return public_ip
+        
+        # 方法4: 原有的获取本机IP逻辑（fallback）
+        local_ip = self._get_local_ip()
+        logger.info(f"获取到本机IP: {local_ip}")
+        return local_ip
+    
+    def _get_host_interface_ip(self) -> str:
+        """获取宿主机网络接口IP地址"""
+        try:
+            import subprocess
+            
+            # 尝试获取宿主机网络接口信息
+            # 在Docker容器中，通常可以通过host.docker.internal或特殊网络访问宿主机
+            
+            # 方法2.1: 尝试访问host.docker.internal（Docker Desktop支持）
+            try:
+                result = subprocess.run(['ping', '-c', '1', 'host.docker.internal'], 
+                                     capture_output=True, text=True, timeout=5)
+                if result.returncode == 0:
+                    # 如果能ping通，尝试获取其IP
+                    result = subprocess.run(['nslookup', 'host.docker.internal'], 
+                                         capture_output=True, text=True, timeout=5)
+                    if result.returncode == 0:
+                        lines = result.stdout.strip().split('\n')
+                        for line in lines:
+                            if 'Address:' in line and not '#' in line:
+                                ip = line.split('Address:')[-1].strip()
+                                if self._is_valid_ip(ip):
+                                    return ip
+            except:
+                pass
+            
+            # 方法2.2: 尝试获取宿主机网络接口IP（通过路由表）
+            try:
+                # 获取所有网络接口
+                result = subprocess.run(['ip', 'addr', 'show'], 
+                                     capture_output=True, text=True, timeout=5)
+                if result.returncode == 0:
+                    lines = result.stdout.strip().split('\n')
+                    current_interface = None
+                    for line in lines:
+                        if line.strip().startswith('inet ') and '127.0.0.1' not in line:
+                            # 找到非回环的IP地址
+                            parts = line.strip().split()
+                            if len(parts) >= 2:
+                                ip = parts[1].split('/')[0]  # 去掉CIDR后缀
+                                if self._is_valid_ip(ip) and not ip.startswith('192.168.80.'):
+                                    # 排除Docker网络IP段
+                                    return ip
+            except:
+                pass
+            
+            # 方法2.3: 通过默认路由获取宿主机IP
+            try:
+                result = subprocess.run(['ip', 'route', 'get', '8.8.8.8'], 
+                                     capture_output=True, text=True, timeout=5)
+                if result.returncode == 0:
+                    lines = result.stdout.strip().split('\n')
+                    for line in lines:
+                        if 'src' in line:
+                            parts = line.split()
+                            for i, part in enumerate(parts):
+                                if part == 'src' and i + 1 < len(parts):
+                                    ip = parts[i + 1]
+                                    if self._is_valid_ip(ip) and not ip.startswith('192.168.80.'):
+                                        return ip
+            except:
+                pass
+                
+        except Exception as e:
+            logger.debug(f"获取宿主机网络接口IP失败: {str(e)}")
+        
+        return ""
+    
+    def _get_local_ip(self) -> str:
+        """获取本机IP地址"""
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            s.connect(('8.8.8.8', 80))
+            ip = s.getsockname()[0]
+        except:
+            ip = '127.0.0.1'
+        finally:
+            s.close()
+        return ip
+    
+    def _is_valid_ip(self, ip_str: str) -> bool:
+        """验证IP地址格式是否有效"""
+        try:
+            parts = ip_str.split('.')
+            if len(parts) != 4:
+                return False
+            for part in parts:
+                if not part.isdigit() or not 0 <= int(part) <= 255:
+                    return False
+            return True
+        except:
+            return False 
