@@ -9,17 +9,17 @@ MoviePilot 第三方插件库，提供了一系列实用的插件来增强 Movie
 **本仓库为第三方插件库，需在 MoviePilot 中添加仓库地址使用**
 
 1. 在 MoviePilot 的插件商店页面，点击"添加第三方仓库"
-2. 添加本仓库地址：`https://github.com/xijin285/MoviePilot-Plugins`
+2. 添加本仓库地址：`https://github.com/yujiajie01/MoviePilot-Plugins`
 3. 添加成功后，在插件列表中找到需要的插件
 4. 安装并启用插件
 5. 根据下方说明配置插件参数
 
 ## 📦 插件列表
 
-#### <img src="https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/ikuai.png" width="32" style="vertical-align:middle;"> 爱快路由备份助手 (IkuaiRouterBackup)
+#### <img src="https://raw.githubusercontent.com/yujiajie01/MoviePilot-Plugins/refs/heads/main/icons/ikuai.png" width="32" style="vertical-align:middle;"> 爱快路由备份助手 (IkuaiRouterBackup)
 
 - **版本**: `v1.3.1`
-- **作者**: [@M.Jinxi](https://github.com/xijin285)
+- **作者**: [@NikoYu](https://github.com/yujiajie01)
 
 **简介**：
 
@@ -71,10 +71,10 @@ MoviePilot 第三方插件库，提供了一系列实用的插件来增强 Movie
 - `v1.0.0`：🚀 初始版本。
 </details>
 
-#### <img src="https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/cnlang.png" width="32" style="vertical-align:middle;"> 国语视界签到 V2 (CnlangSigninV2)
+#### <img src="https://raw.githubusercontent.com/yujiajie01/MoviePilot-Plugins/refs/heads/main/icons/cnlang.png" width="32" style="vertical-align:middle;"> 国语视界签到 V2 (CnlangSigninV2)
 
 - **版本**: `v2.5.8`
-- **作者**: [@M.Jinxi](https://github.com/xijin285)
+- **作者**: [@NikoYu](https://github.com/yujiajie01)
 
 **简介**：
 
@@ -111,10 +111,10 @@ MoviePilot 第三方插件库，提供了一系列实用的插件来增强 Movie
 - `v2.0`：🛠️ 基于 imaliang 插件二次开发，优化数据保存与界面，增加通知样式选择、历史记录保留
 </details>
 
-#### <img src="https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/openwrt.png" width="32" style="vertical-align:middle;"> OpenWrt 路由备份助手 (OpenWrtBackup)
+#### <img src="https://raw.githubusercontent.com/yujiajie01/MoviePilot-Plugins/refs/heads/main/icons/openwrt.png" width="32" style="vertical-align:middle;"> OpenWrt 路由备份助手 (OpenWrtBackup)
 
 - **版本**: `v1.0.1`
-- **作者**: [@M.Jinxi](https://github.com/xijin285)
+- **作者**: [@NikoYu](https://github.com/yujiajie01)
 
 **简介**：
 
@@ -151,10 +151,10 @@ MoviePilot 第三方插件库，提供了一系列实用的插件来增强 Movie
  ⚡ 支持即时备份功能。
 </details>
 
-#### <img src="https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/randompic.png" width="32" style="vertical-align:middle;"> 随机图库 (RandomPic)
+#### <img src="https://raw.githubusercontent.com/yujiajie01/MoviePilot-Plugins/refs/heads/main/icons/randompic.png" width="32" style="vertical-align:middle;"> 随机图库 (RandomPic)
 
 - **版本**: `v2.0.0`
-- **作者**: [@M.Jinxi](https://github.com/xijin285)
+- **作者**: [@NikoYu](https://github.com/yujiajie01)
 
 **简介**：
 
@@ -201,10 +201,10 @@ MoviePilot 第三方插件库，提供了一系列实用的插件来增强 Movie
 - `v1.0.0`：🎉 首个正式版本，📱 支持横竖屏图片分类，🔍 自动识别设备类型，🚀 优化传输性能。
 </details>
 
-#### <img src="https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/proxmox.webp" width="32" style="vertical-align:middle;"> PVE 虚拟机守护神 (ProxmoxVEBackup)
+#### <img src="https://raw.githubusercontent.com/yujiajie01/MoviePilot-Plugins/refs/heads/main/icons/proxmox.webp" width="32" style="vertical-align:middle;"> PVE 虚拟机守护神 (ProxmoxVEBackup)
 
 - **版本**: `v2.1.2`
-- **作者**: [@M.Jinxi](https://github.com/xijin285)
+- **作者**: [@NikoYu](https://github.com/yujiajie01)
 
 **简介**：
 
@@ -250,10 +250,10 @@ MoviePilot 第三方插件库，提供了一系列实用的插件来增强 Movie
 - `v1.0.0`：🎉 首个正式版本。
 </details>
 
-#### <img src="https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/quark.ico" width="32" style="vertical-align:middle;"> 夸克网盘 (QuarkDisk)
+#### <img src="https://raw.githubusercontent.com/yujiajie01/MoviePilot-Plugins/refs/heads/main/icons/quark.ico" width="32" style="vertical-align:middle;"> 夸克网盘 (QuarkDisk)
 
 - **版本**: `v1.0.0`
-- **作者**: [@M.Jinxi](https://github.com/xijin285)
+- **作者**: [@NikoYu](https://github.com/yujiajie01)
 
 **简介**：
 
@@ -274,10 +274,10 @@ MoviePilot 第三方插件库，提供了一系列实用的插件来增强 Movie
 > `v1.0.0`  
 > 🎉 首个正式版本：支持夸克网盘基础操作、存储集成等功能。
 
-#### <img src="https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/cfipselector.png" width="32" style="vertical-align:middle;"> PT 云盾优选 (CFIPSelector)
+#### <img src="https://raw.githubusercontent.com/yujiajie01/MoviePilot-Plugins/refs/heads/main/icons/cfipselector.png" width="32" style="vertical-align:middle;"> PT 云盾优选 (CFIPSelector)
 
 - **版本**: `v1.1.2`
-- **作者**: [@M.Jinxi](https://github.com/xijin285)
+- **作者**: [@NikoYu](https://github.com/yujiajie01)
 
 **简介**：
 
@@ -323,10 +323,10 @@ MoviePilot 第三方插件库，提供了一系列实用的插件来增强 Movie
 - `v1.0.0`：🛡️ 首发，支持Cloudflare IP优选、自动写入hosts、多站点测速、定时任务与多渠道通知推送。
 </details>
 
-#### <img src="https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/randompic.png" width="32" style="vertical-align:middle;"> PT 种子生成器 (PTSeeder)
+#### <img src="https://raw.githubusercontent.com/yujiajie01/MoviePilot-Plugins/refs/heads/main/icons/randompic.png" width="32" style="vertical-align:middle;"> PT 种子生成器 (PTSeeder)
 
 - **版本**: `v1.0.0`
-- **作者**: [@M.Jinxi](https://github.com/xijin285)
+- **作者**: [@NikoYu](https://github.com/yujiajie01)
 
 **简介**：
 

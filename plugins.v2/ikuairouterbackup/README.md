@@ -218,5 +218,5 @@ IP 分组将按以下格式命名：
 如有问题或建议，请通过以下方式联系：
 
 - **GitHub Issues**：[项目地址](https://github.com/yujiajie01/MoviePilot-Plugins)
-- **作者**：M.Jinxi
+- **作者**：NikoYu
 - **主页**：[https://github.com/yujiajie01](https://github.com/yujiajie01)

@@ -33,7 +33,7 @@ class OpenWrtBackup(_PluginBase):
     # 插件版本
     plugin_version = "1.0.1"
     # 插件作者
-    plugin_author = "M.Jinxi"
+    plugin_author = "NikoYu"
     # 作者主页
     author_url = "https://github.com/yujiajie01"
     # 插件配置项ID前缀
