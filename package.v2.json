@@ -3,7 +3,7 @@
     "name": "PT種子生成器",
     "description": "監控目錄下新增文件並生成種子，支持自動添加到下載器做種，提取PT發布信息，兼容Google Cloud Run和GKE水平擴展",
     "labels": "PT,種子,做種,qBittorrent,Transmission,自動化",
-    "version": "1.1.0",
+    "version": "1.1.1",
     "icon": "https://raw.githubusercontent.com/yujiajie01/MoviePilot-Plugins/refs/heads/main/icons/randompic.png",
     "author": "NikoYu",
     "level": 2,

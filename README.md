@@ -18,7 +18,7 @@ MoviePilot 第三方插件库，提供了一系列实用的插件来增强 Movie
 
 #### <img src="https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/randompic.png" width="32" style="vertical-align:middle;"> PT 种子生成器 (PTSeeder)
 
-- **版本**: `v1.0.0`
+- **版本**: `v1.1.1`
 - **作者**: [@NikoYu](https://github.com/yujiajie01)
 
 **简介**：
