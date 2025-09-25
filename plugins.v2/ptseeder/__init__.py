@@ -37,13 +37,13 @@ class PTSeeder(_PluginBase):
     # 插件描述
     plugin_desc = "监控目录下新增文件并生成种子，方便PT站点发布"
     # 插件图标
-    plugin_icon = "https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/randompic.png"
+    plugin_icon = "https://raw.githubusercontent.com/yujiajie01/MoviePilot-Plugins/refs/heads/main/icons/randompic.png"
     # 插件版本
     plugin_version = "1.0.0"
     # 插件作者
     plugin_author = "Author"
     # 作者主页
-    author_url = "https://github.com/xijin285"
+    author_url = "https://github.com/yujiajie01"
     # 插件配置项ID前缀
     plugin_config_prefix = "ptseeder_"
     # 加载顺序

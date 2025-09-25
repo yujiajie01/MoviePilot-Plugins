@@ -26,13 +26,13 @@ class ProxmoxVEBackup(_PluginBase):
     # 插件描述
     plugin_desc = "一站式可视化PVE虚拟化管理平台"
     # 插件图标
-    plugin_icon = "https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/proxmox.webp"
+    plugin_icon = "https://raw.githubusercontent.com/yujiajie01/MoviePilot-Plugins/refs/heads/main/icons/proxmox.webp"
     # 插件版本
     plugin_version = "2.1.2"
     # 插件作者
     plugin_author = "M.Jinxi"
     # 作者主页
-    author_url = "https://github.com/xijin285"
+    author_url = "https://github.com/yujiajie01"
     # 插件配置项ID前缀
     plugin_config_prefix = "proxmox_backup_"
     # 加载顺序

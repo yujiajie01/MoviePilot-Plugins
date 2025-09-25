@@ -17,13 +17,13 @@ class QuarkDisk(_PluginBase):
     # 插件描述
     plugin_desc = "为存储系统集成夸克网盘支持"
     # 插件图标
-    plugin_icon = "https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/quark.ico"
+    plugin_icon = "https://raw.githubusercontent.com/yujiajie01/MoviePilot-Plugins/refs/heads/main/icons/quark.ico"
     # 插件版本
     plugin_version = "1.0.0"
     # 插件作者
     plugin_author = "M.Jinxi"
     # 作者主页
-    author_url = "https://github.com/xijin285"
+    author_url = "https://github.com/yujiajie01"
     # 插件配置项ID前缀
     plugin_config_prefix = "quarkdisk_"
     # 加载顺序

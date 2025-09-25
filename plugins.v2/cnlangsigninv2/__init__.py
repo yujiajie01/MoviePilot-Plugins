@@ -23,13 +23,13 @@ class CnlangSigninV2(_PluginBase):
     # 插件描述
     plugin_desc = "美观实用的签到助手"
     # 插件图标
-    plugin_icon = "https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/cnlang.png"
+    plugin_icon = "https://raw.githubusercontent.com/yujiajie01/MoviePilot-Plugins/refs/heads/main/icons/cnlang.png"
     # 插件版本
     plugin_version = "2.5.8"
     # 插件作者
     plugin_author = "M.Jinxi"
     # 作者主页
-    author_url = "https://github.com/xijin285"
+    author_url = "https://github.com/yujiajie01"
     # 插件配置项ID前缀
     plugin_config_prefix = "cnlangsignin_v2_"
     # 加载顺序

@@ -30,13 +30,13 @@ class IkuaiRouterBackup(_PluginBase):
     # 插件描述
     plugin_desc = "轻松配置您的爱快路由，让路由管理更简单"
     # 插件图标
-    plugin_icon = "https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/ikuai.png"
+    plugin_icon = "https://raw.githubusercontent.com/yujiajie01/MoviePilot-Plugins/refs/heads/main/icons/ikuai.png"
     # 插件版本
     plugin_version = "1.3.1"
     # 插件作者
     plugin_author = "M.Jinxi"
     # 作者主页
-    author_url = "https://github.com/xijin285"
+    author_url = "https://github.com/yujiajie01"
     # 插件配置项ID前缀
     plugin_config_prefix = "ikuai_backup_"
     # 加载顺序
@@ -764,7 +764,7 @@ class IkuaiRouterBackup(_PluginBase):
                                             'class': 'mt-4'
                                         }, 'content': [
                                             {'component': 'span', 'text': '配置说明参考: '},
-                                            {'component': 'a', 'props': {'href': 'https://github.com/xijin285/MoviePilot-Plugins/tree/main/plugins.v2/ikuairouterbackup/README.md', 'target': '_blank', 'style': 'color:#2196f3;text-decoration:underline;'}, 'text': 'README'}
+                                            {'component': 'a', 'props': {'href': 'https://github.com/yujiajie01/MoviePilot-Plugins/tree/main/plugins.v2/ikuairouterbackup/README.md', 'target': '_blank', 'style': 'color:#2196f3;text-decoration:underline;'}, 'text': 'README'}
                                         ]
                                     }
                                 ]

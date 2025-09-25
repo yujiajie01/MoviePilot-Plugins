@@ -32,10 +32,10 @@ except ImportError:
 class CFIPSelector(_PluginBase):
     plugin_name = "PT云盾优选"
     plugin_desc = "PT站点专属优选IP，自动写入hosts，访问快人一步"
-    plugin_icon = "https://raw.githubusercontent.com/xijin285/MoviePilot-Plugins/refs/heads/main/icons/cfipselector.png"
+    plugin_icon = "https://raw.githubusercontent.com/yujiajie01/MoviePilot-Plugins/refs/heads/main/icons/cfipselector.png"
     plugin_version = "1.1.2"
     plugin_author = "M.Jinxi"
-    author_url = "https://github.com/xijin285"
+    author_url = "https://github.com/yujiajie01"
     plugin_config_prefix = "cfipselector_"
     plugin_order = 2
     auth_level = 2
@@ -1278,7 +1278,7 @@ class CFIPSelector(_PluginBase):
                                                 'class': 'mt-2 mb-2'
                                             }, 'content': [
                                                 {'component': 'span', 'text': '配置说明参考: '},
-                                                {'component': 'a', 'props': {'href': 'https://github.com/xijin285/MoviePilot-Plugins/tree/main/plugins.v2/cfipselector/README.md', 'target': '_blank', 'style': 'color:#2196f3;text-decoration:underline;'}, 'text': 'README'}
+                                                {'component': 'a', 'props': {'href': 'https://github.com/yujiajie01/MoviePilot-Plugins/tree/main/plugins.v2/cfipselector/README.md', 'target': '_blank', 'style': 'color:#2196f3;text-decoration:underline;'}, 'text': 'README'}
                                             ]}
                                         ]}
                                     ]}
